@@ -66,6 +66,7 @@
 #include "sql/handler.h"
 #include "sql/histograms/equi_height.h"  // Equi_height<T>
 #include "sql/histograms/singleton.h"    // Singleton<T>
+#include "sql/histograms/json_flex.h"    // Singleton<T>
 #include "sql/histograms/value_map.h"    // Value_map
 #include "sql/item.h"
 #include "sql/item_json_func.h"  // parse_json
@@ -644,8 +645,8 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
     }
   } else if (histogram_type->value() == Histogram::json_flex_str()) {
     histogram =
-          Singleton<longlong>::create(mem_root, schema_name, table_name,
-                                    column_name, Value_map_type::INT);
+          Json_flex::create(mem_root, schema_name, table_name, 
+                                    column_name);
     if (histogram != nullptr)
       histogram->set_enum_histogram_type(enum_histogram_type::JSON_FLEX);
   }
