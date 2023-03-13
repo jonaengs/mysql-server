@@ -32,7 +32,7 @@ SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND CO
 --echo # ATTEMPT SET HISTOGRAM ILLEGAL DATA
 ANALYZE TABLE t UPDATE HISTOGRAM ON a USING DATA 
     -- Note: data-type must match data type of the column
-    "buckets": '{"data": [{}],
+    '{"buckets": [{}],
     "histogram-type": "json-flex",
     "data-type": "int",
     "null-values": 0.0,
