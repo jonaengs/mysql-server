@@ -296,6 +296,20 @@ bool Singleton<T>::json_to_histogram(const Json_object &json_object,
   const Json_array *buckets = down_cast<const Json_array *>(buckets_dom);
   if (m_buckets.reserve(buckets->size())) return true;  // OOM
 
+  // Skip bucket checks if json_flex type. Should be safe, as we've already 
+  // checked that these fields exist before arriving here.
+  // We place this code so far down to include as much error checking as possible
+  const Json_dom *histogram_type_dom =
+      json_object.get(Histogram::histogram_type_str());
+  const Json_string *histogram_type =
+      down_cast<const Json_string *>(histogram_type_dom);
+  if (histogram_type->value() == Histogram::json_flex_str()) {
+    // Add buckets
+      // m_buckets.push_back(
+      //   SingletonBucket<T>(value, cumulative_frequency->value()));
+    return false;
+  }
+
   for (size_t i = 0; i < buckets->size(); ++i) {
     const Json_dom *bucket_dom = (*buckets)[i];
     if (buckets_dom == nullptr) {

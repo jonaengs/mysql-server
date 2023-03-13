@@ -644,8 +644,8 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
     }
   } else if (histogram_type->value() == Histogram::json_flex_str()) {
     histogram =
-          Singleton<String>::create(mem_root, schema_name, table_name,
-                                    column_name, Value_map_type::STRING);
+          Singleton<longlong>::create(mem_root, schema_name, table_name,
+                                    column_name, Value_map_type::INT);
     if (histogram != nullptr)
       histogram->set_enum_histogram_type(enum_histogram_type::JSON_FLEX);
   }
