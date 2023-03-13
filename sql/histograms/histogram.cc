@@ -458,6 +458,10 @@ double Histogram::get_null_values_fraction() const {
   return m_null_values_fraction;
 }
 
+void Histogram::set_enum_histogram_type(enum_histogram_type type) {
+  m_hist_type = type;
+}
+
 template <class T>
 Histogram *build_histogram(MEM_ROOT *mem_root, const Value_map<T> &value_map,
                            size_t num_buckets, const std::string &db_name,
@@ -638,7 +642,14 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
       context->report_node(data_type_dom, Message::JSON_UNSUPPORTED_DATA_TYPE);
       return nullptr;
     }
-  } else {
+  } else if (histogram_type->value() == Histogram::json_flex_str()) {
+    histogram =
+          Singleton<String>::create(mem_root, schema_name, table_name,
+                                    column_name, Value_map_type::STRING);
+    if (histogram != nullptr)
+      histogram->set_enum_histogram_type(enum_histogram_type::JSON_FLEX);
+  }
+  else {
     // Unsupported histogram type.
     context->report_node(histogram_type_dom,
                          Message::JSON_UNSUPPORTED_HISTOGRAM_TYPE);
@@ -650,10 +661,10 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
     return nullptr;
 
   // Global post-check
-  if (histogram->get_num_buckets_specified() < histogram->get_num_buckets()) {
-    context->report_global(Message::JSON_NUM_BUCKETS_MORE_THAN_SPECIFIED);
-    return nullptr;
-  }
+  // if (histogram->get_num_buckets_specified() < histogram->get_num_buckets()) {
+  //   context->report_global(Message::JSON_NUM_BUCKETS_MORE_THAN_SPECIFIED);
+  //   return nullptr;
+  // }
   return histogram;
 }
 
@@ -1793,6 +1804,7 @@ bool find_histogram(THD *thd, const std::string &schema_name,
 template <class T>
 double Histogram::get_less_than_selectivity_dispatcher(const T &value) const {
   switch (get_histogram_type()) {
+    case enum_histogram_type::JSON_FLEX:
     case enum_histogram_type::SINGLETON: {
       const Singleton<T> *singleton = down_cast<const Singleton<T> *>(this);
       return singleton->get_less_than_selectivity(value);
@@ -1802,6 +1814,7 @@ double Histogram::get_less_than_selectivity_dispatcher(const T &value) const {
           down_cast<const Equi_height<T> *>(this);
       return equi_height->get_less_than_selectivity(value);
     }
+    
   }
   /* purecov: begin deadcode */
   assert(false);
@@ -1813,6 +1826,7 @@ template <class T>
 double Histogram::get_greater_than_selectivity_dispatcher(
     const T &value) const {
   switch (get_histogram_type()) {
+    case enum_histogram_type::JSON_FLEX:
     case enum_histogram_type::SINGLETON: {
       const Singleton<T> *singleton = down_cast<const Singleton<T> *>(this);
       return singleton->get_greater_than_selectivity(value);
@@ -1832,6 +1846,7 @@ double Histogram::get_greater_than_selectivity_dispatcher(
 template <class T>
 double Histogram::get_equal_to_selectivity_dispatcher(const T &value) const {
   switch (get_histogram_type()) {
+    case enum_histogram_type::JSON_FLEX:
     case enum_histogram_type::SINGLETON: {
       const Singleton<T> *singleton = down_cast<const Singleton<T> *>(this);
       return singleton->get_equal_to_selectivity(value);
