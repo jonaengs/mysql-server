@@ -176,6 +176,8 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
 
   for (size_t i = 0; i < buckets->size(); ++i) {
     const Json_dom *bucket_dom = (*buckets)[i];
+
+    // That bucket exists and is an array
     if (buckets_dom == nullptr) {
       context->report_missing_attribute(Histogram::buckets_str());
       return true;
@@ -185,12 +187,8 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       return true;
     }
     const Json_array *bucket = down_cast<const Json_array *>(bucket_dom);
-    if (bucket->size() != 2) {
-      context->report_node(bucket_dom, Message::JSON_WRONG_BUCKET_TYPE_2);
-      return true;
-    }
 
-    // First item is the value, second is the cumulative frequency
+    // Compute second item, the frequency
     const Json_dom *frequency_dom = (*bucket)[1];
     if (frequency_dom->json_type() != enum_json_type::J_DOUBLE) {
       context->report_node(frequency_dom,
@@ -201,73 +199,28 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         down_cast<const Json_double *>(frequency_dom);
 
 
+    // Compute first item, the key path
     const Json_dom *key_path_dom = (*bucket)[0];
     String key_path;
-    if (extract_json_dom_value(key_path_dom, &key_path, context)) return true;
 
-    // Bucket extraction post-check
-    // {
-    //   if ((frequency->value() < 0.0) ||
-    //       (frequency->value() > 1.0)) {
-    //     context->report_node(frequency_dom,
-    //                          Message::JSON_INVALID_FREQUENCY);
-    //     return true;
-    //   }
-    //   if (context->check_value(&value)) {
-    //     context->report_node(key_path_dom, Message::JSON_VALUE_OUT_OF_RANGE);
-    //     return true;
-    //   }
-    //   // Check endpoint sequence and frequency sequence.
-    //   if (!m_buckets.empty()) {
-    //     JsonBucket *last_bucket = &m_buckets[m_buckets.size() - 1];
-    //     if (!histograms::Histogram_comparator()(last_bucket->value, value)) {
-    //       context->report_node(key_path_dom, Message::JSON_VALUE_NOT_ASCENDING_1);
-    //       return true;
-    //     }
-    //     if (last_bucket->frequency > frequency->value()) {
-    //       context->report_node(
-    //           frequency_dom,
-    //           Message::JSON_CUMULATIVE_FREQUENCY_NOT_ASCENDING);
-    //       return true;
-    //     }
-    //   }
-    // }
+    if (extract_json_dom_value(key_path_dom, &key_path, context)) {
+      // Try the existing method first. If that fails, do our own simplified version instead
+      if (key_path_dom->json_type() != enum_json_type::J_STRING) {
+        context->report_node(frequency_dom,
+                            Message::JSON_WRONG_ATTRIBUTE_TYPE);
+        return true;
+      }
+      const Json_string *json_key_path = down_cast<const Json_string *>(key_path_dom);
+      assert(get_character_set() != nullptr);
+      key_path.set(json_key_path->value().c_str(), json_key_path->value().size(), get_character_set());
+    }
+
 
     assert(m_buckets.capacity() > m_buckets.size());
     m_buckets.push_back(
         JsonBucket(key_path, frequency->value()));
   }
-//   bool histogram_buckets_sorted = std::is_sorted(
-//       m_buckets.begin(), m_buckets.end(), Histogram_comparator());
-//   bool already_validated [[maybe_unused]] = context->binary();
-//   assert(!already_validated || histogram_buckets_sorted);
-//   if (!histogram_buckets_sorted) {
-//     context->report_node(buckets_dom, Message::JSON_VALUE_NOT_ASCENDING_1);
-//     return true;
-//   }
 
-  // Global post-check
-  {
-    // /*
-    //   Note that --- may be built on an empty table or an all-NULL
-    //   column. In this case the buckets array is empty.
-    // */
-    // if (m_buckets.empty()) {
-    //   if (get_null_values_fraction() != 1.0 &&
-    //       get_null_values_fraction() != 0.0) {
-    //     context->report_global(Message::JSON_INVALID_NULL_VALUES_FRACTION);
-    //     return true;
-    //   }
-    // } else {
-    //   SingletonBucket *last_bucket = &m_buckets[m_buckets.size() - 1];
-    //   float sum =
-    //       last_bucket->cumulative_frequency + get_null_values_fraction();
-    //   if (std::abs(sum - 1.0) > 0) {
-    //     context->report_global(Message::JSON_INVALID_TOTAL_FREQUENCY);
-    //     return true;
-    //   }
-    // }
-  }
   return false;
 }
 

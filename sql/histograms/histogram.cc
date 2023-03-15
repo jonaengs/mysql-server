@@ -459,10 +459,6 @@ double Histogram::get_null_values_fraction() const {
   return m_null_values_fraction;
 }
 
-void Histogram::set_enum_histogram_type(enum_histogram_type type) {
-  m_hist_type = type;
-}
-
 template <class T>
 Histogram *build_histogram(MEM_ROOT *mem_root, const Value_map<T> &value_map,
                            size_t num_buckets, const std::string &db_name,
@@ -647,8 +643,6 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
     histogram =
           Json_flex::create(mem_root, schema_name, table_name, 
                                     column_name);
-    if (histogram != nullptr)
-      histogram->set_enum_histogram_type(enum_histogram_type::JSON_FLEX);
   }
   else {
     // Unsupported histogram type.
@@ -1423,10 +1417,11 @@ bool update_histogram(THD *thd, Table_ref *table, const columns_set &columns,
     Error_context context(thd, field, table->table, &results);
     std::string col_name(field->field_name);
     // Convert JSON to histogram
+    const Json_object &json_object = *down_cast<Json_object *>(dom.get());
     histograms::Histogram *histogram = Histogram::json_to_histogram(
         &local_mem_root, std::string(table->db, table->db_length),
         std::string(table->table_name, table->table_name_length), col_name,
-        *down_cast<Json_object *>(dom.get()), &context);
+        json_object, &context);
 
     // Store it to persistent storage.
     if (histogram == nullptr || histogram->store_histogram(thd)) {
