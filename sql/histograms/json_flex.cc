@@ -233,18 +233,21 @@ Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {
 }
 
 double Json_flex::get_equal_to_selectivity(const longlong &value) const {
-    if (value) return 0.1;
-    return 0.3;
+  if (m_buckets.begin() != m_buckets.end())
+    return m_buckets.begin()->frequency;
+  return 0.0 * value;
 }
 
 double Json_flex::get_less_than_selectivity(const longlong &value) const {
-    if (value) return 0.3;
-    return 0.3;
+  if (m_buckets.begin() != m_buckets.end())
+    return m_buckets.begin()->frequency;
+  return 0.0 * value;
 }
 
 double Json_flex::get_greater_than_selectivity(const longlong &value) const {
-    if (value) return 0.3;
-    return 0.3;
+  if (m_buckets.begin() != m_buckets.end())
+    return m_buckets.begin()->frequency;
+  return 0.0 * value;
 }
 
 }  // namespace histograms
