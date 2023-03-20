@@ -19,20 +19,25 @@ INSERT INTO t VALUES(2);
 # --echo
 # --echo # ATTEMPT SET HISTOGRAM LEGAL DATA
 # ANALYZE TABLE t UPDATE HISTOGRAM ON a USING DATA 
-#     '{"buckets": [[1, 0.2], [2, 1.0]],
-#     "data-type": "int", "null-values": 0.0, "collation-id":
-#     8, "last-updated": "2023-02-27 16:13:14.563319",
-#     "sampling-rate": 1.0, "histogram-type": "singleton",
-#     "number-of-buckets-specified": 100}';
---echo # SHOW HISTOGRAM
-SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'a';
+#     '{"buckets": [[1, 0.5], [2, 1.0]],
+#     "histogram-type": "singleton",
+#     "data-type": "int",
+#     "null-values": 0.0,
+#     "last-updated": "2023-02-27 16:13:14.0",
+#     "number-of-buckets-specified": 100,
+#     "collation-id": 8,
+#     "sampling-rate": 1.0}';
+# --echo # SHOW HISTOGRAM
+# SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'a';
+# --echo # QUERY t
+# SELECT * FROM t;
 
 
 --echo  
 --echo # ATTEMPT SET HISTOGRAM ILLEGAL DATA
 ANALYZE TABLE t UPDATE HISTOGRAM ON a USING DATA 
     -- Note: data-type must match data type of the column
-    '{"buckets": [["a", 0.2], ["b", 0.5]],
+    '{"buckets": [["base64:type254:YWE=", 0.5], ["base64:type254:YWI=", 1.0]],
     "histogram-type": "json-flex",
     "data-type": "int",
     "null-values": 0.0,
@@ -40,13 +45,27 @@ ANALYZE TABLE t UPDATE HISTOGRAM ON a USING DATA
     "number-of-buckets-specified": 100,
     "collation-id": 8,
     "sampling-rate": 1.0}';
-#
 --echo # SHOW HISTOGRAM
 SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'a';
 
---echo # EXPLAIN ANALYZE
+ANALYZE TABLE t UPDATE HISTOGRAM ON a USING DATA 
+    -- Note: data-type must match data type of the column
+    '{"buckets": [["base64:type254:YWE=", 0.5], ["base64:type254:YWI=", 1.0]],
+    "histogram-type": "json-flex",
+    "data-type": "int",
+    "null-values": 0.0,
+    "last-updated": "2023-02-27 16:13:14.0",
+    "number-of-buckets-specified": 100,
+    "collation-id": 8,
+    "sampling-rate": 1.0}';
+--echo # SHOW HISTOGRAM
+SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'a';
+
+
+--echo # QUERY t
 SELECT * FROM t;
 SELECT * FROM t WHERE a = 1;
+--echo # EXPLAIN ANALYZE
 EXPLAIN ANALYZE SELECT * FROM t WHERE a = 1;
 # 
 # 

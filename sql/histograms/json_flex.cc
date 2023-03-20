@@ -78,7 +78,8 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
 }
 
 bool Json_flex::build_histogram(size_t num_buckets) {
-  num_buckets = 1;
+  // Shouldn't be called
+  assert(false);
   return true && num_buckets;  // make compiler stop complaining
 }
 
@@ -121,34 +122,6 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
   // frequency
   const Json_double frequency(bucket.frequency);
   if (json_bucket->append_clone(&frequency))
-    return true; /* purecov: inspected */
-  return false;
-}
-
-template <>
-bool Json_flex::add_value_json_bucket<String>(const String &value,
-                                              Json_array *json_bucket) {
-  const Json_opaque json_value(enum_field_types::MYSQL_TYPE_STRING, value.ptr(),
-                               value.length());
-  if (json_bucket->append_clone(&json_value))
-    return true; /* purecov: inspected */
-  return false;
-}
-
-template <>
-bool Json_flex::add_value_json_bucket<double>(const double &value,
-                                              Json_array *json_bucket) {
-  const Json_double json_value(value);
-  if (json_bucket->append_clone(&json_value))
-    return true; /* purecov: inspected */
-  return false;
-}
-
-template <>
-bool Json_flex::add_value_json_bucket<longlong>(const longlong &value,
-                                                Json_array *json_bucket) {
-  const Json_int json_value(value);
-  if (json_bucket->append_clone(&json_value))
     return true; /* purecov: inspected */
   return false;
 }
@@ -233,19 +206,19 @@ Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {
 }
 
 double Json_flex::get_equal_to_selectivity(const longlong &value) const {
-  if (m_buckets.begin() != m_buckets.end())
+  if (!m_buckets.empty())
     return m_buckets.begin()->frequency;
   return 0.0 * value;
 }
 
 double Json_flex::get_less_than_selectivity(const longlong &value) const {
-  if (m_buckets.begin() != m_buckets.end())
+  if (!m_buckets.empty())
     return m_buckets.begin()->frequency;
   return 0.0 * value;
 }
 
 double Json_flex::get_greater_than_selectivity(const longlong &value) const {
-  if (m_buckets.begin() != m_buckets.end())
+  if (!m_buckets.empty())
     return m_buckets.begin()->frequency;
   return 0.0 * value;
 }
