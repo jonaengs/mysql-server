@@ -78,17 +78,17 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
     return;  // OOM
   }
   for (const auto &bucket : other.m_buckets) {
-    char *string_data = bucket.value.dup(mem_root);
+    char *string_data = bucket.key_path.dup(mem_root);
     if (string_data == nullptr) {
       *error = true;
       assert(false); /* purecov: deadcode */
       return;        // OOM
     }
 
-    String string_dup(string_data, bucket.value.length(),
-                      bucket.value.charset());
+    String string_dup(string_data, bucket.key_path.length(),
+                      bucket.key_path.charset());
     m_buckets.push_back(
-        JsonBucket(string_dup, bucket.cumulative_frequency));
+        JsonBucket(string_dup, bucket.frequency, bucket.null_values));
   }
 }
 
@@ -122,14 +122,18 @@ bool Json_flex::histogram_to_json(Json_object *json_object) const {
 
 bool Json_flex::create_json_bucket(const JsonBucket &bucket,
                                       Json_array *json_bucket) {
-  // Value
-  if (add_value_json_bucket(bucket.value, json_bucket))
+  // Key path
+  if (add_value_json_bucket(bucket.key_path, json_bucket))
     return true; /* purecov: inspected */
 
-  // Cumulative frequency
-  const Json_double frequency(bucket.cumulative_frequency);
-  if (json_bucket->append_clone(&frequency))
+  // frequency
+  if (add_value_json_bucket(bucket.frequency, json_bucket))
     return true; /* purecov: inspected */
+
+  // null_values
+  if (add_value_json_bucket(bucket.null_values, json_bucket))
+    return true; /* purecov: inspected */
+  
   return false;
 }
 
@@ -138,9 +142,13 @@ bool Json_flex::add_value_json_bucket(const String &value,
                                               Json_array *json_bucket) {
   const Json_opaque json_value(enum_field_types::MYSQL_TYPE_STRING, value.ptr(),
                                value.length());
-  if (json_bucket->append_clone(&json_value))
-    return true; /* purecov: inspected */
-  return false;
+  return json_bucket->append_clone(&json_value);
+}
+
+bool Json_flex::add_value_json_bucket(const double &value,
+                                              Json_array *json_bucket) {
+  const Json_double json_value(value);
+  return json_bucket->append_clone(&json_value);
 }
 
 std::string Json_flex::histogram_type_to_str() const {
@@ -151,6 +159,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
                                      Error_context *context) {
   if (Histogram::json_to_histogram(json_object, context)) return true;
 
+  // VERIFY BUCKETS JSON & ALLOCATE BUCKETS MEMORY
   const Json_dom *buckets_dom = json_object.get(buckets_str());
   if (buckets_dom == nullptr) {
     context->report_missing_attribute(Histogram::buckets_str());
@@ -160,11 +169,12 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     context->report_node(buckets_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
     return true;
   }
-
   const Json_array *buckets = down_cast<const Json_array *>(buckets_dom);
   if (m_buckets.reserve(buckets->size())) return true;  // OOM
 
+  // COPY BUCKET VALUES
   for (size_t i = 0; i < buckets->size(); ++i) {
+    // VERIFY BUCKET JSON
     const Json_dom *bucket_dom = (*buckets)[i];
     if (buckets_dom == nullptr) {
       context->report_missing_attribute(Histogram::buckets_str());
@@ -175,53 +185,34 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       return true;
     }
     const Json_array *bucket = down_cast<const Json_array *>(bucket_dom);
-    if (bucket->size() != 2) {
-      context->report_node(bucket_dom, Message::JSON_WRONG_BUCKET_TYPE_2);
+    if (bucket->size() != json_bucket_member_count()) {
+      context->report_node(bucket_dom, Message::JSON_WRONG_BUCKET_TYPE_N);
       return true;
     }
 
-    // First item is the value, second is the cumulative frequency
-    const Json_dom *cumulative_frequency_dom = (*bucket)[1];
-    if (cumulative_frequency_dom->json_type() != enum_json_type::J_DOUBLE) {
-      context->report_node(cumulative_frequency_dom,
-                           Message::JSON_WRONG_ATTRIBUTE_TYPE);
-      return true;
-    }
 
-    const Json_double *cumulative_frequency =
-        down_cast<const Json_double *>(cumulative_frequency_dom);
-
-    const Json_dom *value_dom = (*bucket)[0];
-    String value;
-    if (extract_json_dom_value(value_dom, &value, context)) return true;
+    // GET FIRST BUCKET ITEM: key_path
+    const Json_dom *key_path_dom = (*bucket)[0];
+    String key_path;
+    if (extract_json_dom_value(key_path_dom, &key_path, context)) return true;
 
 
+    // GET SECOND BUCKET ITEM: frequency
+    const Json_dom *frequency_dom = (*bucket)[1];
+    double frequency;
+    if (extract_json_dom_value(frequency_dom, &frequency, context)) return true;
+    
+
+    // GET THIRD BUCKET ITEM: null_values
+    const Json_dom *null_values_dom = (*bucket)[1];
+    double null_values;
+    if (extract_json_dom_value(null_values_dom, &null_values, context)) return true;
+
+
+    // STORE BUCKET IN HISTOGRAM
+    JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values);
     assert(m_buckets.capacity() > m_buckets.size());
-    m_buckets.push_back(
-        JsonBucket(value, cumulative_frequency->value()));
-  }
-
-  // Global post-check
-  {
-    /*
-      Note that Json_flex may be built on an empty table or an all-NULL
-      column. In this case the buckets array is empty.
-    */
-    if (m_buckets.empty()) {
-      if (get_null_values_fraction() != 1.0 &&
-          get_null_values_fraction() != 0.0) {
-        context->report_global(Message::JSON_INVALID_NULL_VALUES_FRACTION);
-        return true;
-      }
-    } else {
-      JsonBucket *last_bucket = &m_buckets[m_buckets.size() - 1];
-      float sum =
-          last_bucket->cumulative_frequency + get_null_values_fraction();
-      if (std::abs(sum - 1.0) > 0) {
-        context->report_global(Message::JSON_INVALID_TOTAL_FREQUENCY);
-        return true;
-      }
-    }
+    m_buckets.push_back(hist_bucket);
   }
   return false;
 }

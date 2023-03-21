@@ -3,18 +3,18 @@
 --echo #########################################################################
 
 --echo # CREATE TABLE
-CREATE TABLE t(a varchar(2));
+CREATE TABLE t(j json);
 --echo # INSERT DATA
-INSERT INTO t VALUES("aa");
-INSERT INTO t VALUES("bb");
+INSERT INTO t VALUES("{}");
+INSERT INTO t VALUES("[]");
 
 --echo  
---echo ATTEMPT SET JSON_FLEX
-ANALYZE TABLE t UPDATE HISTOGRAM ON a USING DATA 
+--echo ATTEMPT SET JSON_FLEX ON STRING COLUMN
+ANALYZE TABLE t UPDATE HISTOGRAM ON j USING DATA 
     -- Note: data-type must match data type of the column
-    '{"buckets": [["base64:type254:YWE=", 0.5, 0.2], ["base64:type254:YmI=", 1.0, 0.0]],
+    '{"buckets": [["base64:type254:YWE=", 0.5], ["base64:type254:YmI=", 1.0]],
     "histogram-type": "json-flex",
-    "data-type": "string",
+    "data-type": "json",
     "null-values": 0.0,
     "last-updated": "2023-02-27 16:13:14.0",
     "number-of-buckets-specified": 100,
@@ -22,6 +22,6 @@ ANALYZE TABLE t UPDATE HISTOGRAM ON a USING DATA
     "sampling-rate": 1.0}';
 
 --echo # SHOW HISTOGRAM
-SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'a';
+SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'j';
 --echo # QUERY t
 SELECT * FROM t;

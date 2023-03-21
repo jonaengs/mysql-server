@@ -101,11 +101,14 @@ namespace histograms {
 template <class T>
 class Value_map;
 
+#define JSON_BUCKET_MEMBER_COUNT 3
 struct JsonBucket {
-  String value;
-  double cumulative_frequency;
-  JsonBucket(String value, double cumulative_frequency)
-      : value(value), cumulative_frequency(cumulative_frequency) {}
+  String key_path;
+  double frequency;
+  double null_values;
+  JsonBucket(String key_path, double frequency, double null_values)
+      : key_path(key_path), frequency(frequency),
+        null_values(null_values) {}
 };
 
 class Json_flex : public Histogram {
@@ -228,6 +231,8 @@ class Json_flex : public Histogram {
                          Error_context *context) override;
 
  private:
+  /// Expected length of a json representation of the Json_flex bucket
+  static constexpr size_t json_bucket_member_count() { return JSON_BUCKET_MEMBER_COUNT; }
   /// String representation of the histogram type JSON_FLEX.
   static constexpr const char *json_flex_str() { return "json-flex"; }
 
@@ -270,6 +275,7 @@ class Json_flex : public Histogram {
     @return     true on error, false otherwise
   */
   static bool add_value_json_bucket(const String &value, Json_array *json_bucket);
+  static bool add_value_json_bucket(const double &value, Json_array *json_bucket);
 
   /**
     Convert one bucket to a JSON object.
@@ -282,10 +288,11 @@ class Json_flex : public Histogram {
   static bool create_json_bucket(const JsonBucket &bucket,
                                  Json_array *json_bucket);
 
-  /// The buckets for this histogram [value, cumulative frequency].
+  /// The buckets for this histogram
   Mem_root_array<JsonBucket> m_buckets;
 };
 
 }  // namespace histograms
 
+#undef JSON_BUCKET_MEMBER_COUNT
 #endif

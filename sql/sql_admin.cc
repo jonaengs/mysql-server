@@ -480,6 +480,12 @@ bool Sql_cmd_analyze_table::send_histogram_results(
         message.append(pair.first);
         message.append("'.");
         break;
+      case histograms::Message::JSON_WRONG_BUCKET_TYPE_N:
+        message_type.assign("Error");
+        message.assign("Wrong number of buckets passed at '");
+        message.append(pair.first);
+        message.append("'.");
+        break;
       case histograms::Message::JSON_WRONG_DATA_TYPE:
         message_type.assign("Error");
         message.assign(
