@@ -144,16 +144,6 @@ class Json_flex : public Histogram {
   Json_flex(const Json_flex &other) = delete;
 
   /**
-    Build the Json_flex histogram.
-
-    @param   value_map   values to create the histogram for
-    @param   num_buckets the number of buckets specified/requested by the user
-
-    @return  true on error, false otherwise
-  */
-  bool build_histogram(const Value_map<String> &value_map, size_t num_buckets);
-
-  /**
     Convert this histogram to a JSON object.
 
     This function will take the contents of the current histogram and put

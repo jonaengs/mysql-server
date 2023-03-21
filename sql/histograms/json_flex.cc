@@ -92,54 +92,6 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
   }
 }
 
-bool Json_flex::build_histogram(const Value_map<String> &value_map,
-                                   size_t num_buckets) {
-  // Clear any existing data.
-  m_buckets.clear();
-  m_null_values_fraction = INVALID_NULL_VALUES_FRACTION;
-  m_sampling_rate = value_map.get_sampling_rate();
-
-  // Set the number of buckets that was specified/requested by the user.
-  m_num_buckets_specified = num_buckets;
-
-  // Set the character set for the histogram data.
-  m_charset = value_map.get_character_set();
-
-  // Get total frequency count.
-  ha_rows num_non_null_values = 0;
-  for (const auto &node : value_map) num_non_null_values += node.second;
-
-  // No values, nothing to do.
-  if (num_non_null_values == 0) {
-    if (value_map.get_num_null_values() > 0)
-      m_null_values_fraction = 1.0;
-    else
-      m_null_values_fraction = 0.0;
-
-    return false;
-  }
-
-  const ha_rows total_count =
-      value_map.get_num_null_values() + num_non_null_values;
-
-  // Set the fractions of NULL values.
-  m_null_values_fraction =
-      value_map.get_num_null_values() / static_cast<double>(total_count);
-
-  // Create buckets with relative frequency, and not absolute frequency.
-  ha_rows cumulative_sum = 0;
-
-  if (m_buckets.reserve(value_map.size())) return true;  // OOM
-
-  for (const auto &node : value_map) {
-    cumulative_sum += node.second;
-    const double cumulative_frequency =
-        cumulative_sum / static_cast<double>(total_count);
-    m_buckets.push_back(JsonBucket(node.first, cumulative_frequency));
-  }
-
-  return false;
-}
 
 bool Json_flex::histogram_to_json(Json_object *json_object) const {
   /*
