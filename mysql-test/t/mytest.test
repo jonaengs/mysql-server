@@ -1,0 +1,41 @@
+--echo #########################################################################
+--echo # START SET MANUAL HISTOGRAM
+--echo #########################################################################
+
+--echo # CREATE TABLE
+CREATE TABLE t(a int);
+--echo # INSERT DATA
+INSERT INTO t VALUES(1);
+INSERT INTO t VALUES(2);
+
+
+--echo ATTEMPT SET SINGLETON
+ANALYZE TABLE t UPDATE HISTOGRAM ON a USING DATA 
+    '{"buckets": [[1, 0.5], [2, 1.0]],
+    "histogram-type": "singleton",
+    "data-type": "int",
+    "null-values": 0.0,
+    "last-updated": "2023-02-27 16:13:14.0",
+    "number-of-buckets-specified": 100,
+    "collation-id": 8,
+    "sampling-rate": 1.0}';
+SELECT * FROM t;
+
+
+--echo  
+--echo ATTEMPT SET JSON_FLEX
+ANALYZE TABLE t UPDATE HISTOGRAM ON a USING DATA 
+    -- Note: data-type must match data type of the column
+    '{"buckets": [[1, 0.5], [3, 1.0]],
+    "histogram-type": "json-flex",
+    "data-type": "int",
+    "null-values": 0.0,
+    "last-updated": "2023-02-27 16:13:14.0",
+    "number-of-buckets-specified": 100,
+    "collation-id": 8,
+    "sampling-rate": 1.0}';
+
+--echo # SHOW HISTOGRAM
+SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'a';
+--echo # QUERY t
+SELECT * FROM t;

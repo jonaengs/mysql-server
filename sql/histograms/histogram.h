@@ -291,7 +291,7 @@ class Error_context {
 class Histogram {
  public:
   /// All supported histogram types in MySQL.
-  enum class enum_histogram_type { EQUI_HEIGHT, SINGLETON };
+  enum class enum_histogram_type { EQUI_HEIGHT, SINGLETON, JSON_FLEX };
 
   /// String representation of the JSON field "histogram-type".
   static constexpr const char *histogram_type_str() { return "histogram-type"; }
@@ -307,6 +307,9 @@ class Histogram {
 
   /// String representation of the histogram type EQUI-HEIGHT.
   static constexpr const char *equi_height_str() { return "equi-height"; }
+
+  /// String representation of the histogram type JSON-FLEX.
+  static constexpr const char *json_flex_str() { return "json-flex"; }
 
  protected:
   double m_sampling_rate;

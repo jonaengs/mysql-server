@@ -29,6 +29,7 @@
 #include "sql/dd/impl/types/column_statistics_impl.h"
 #include "sql/histograms/equi_height.h"
 #include "sql/histograms/singleton.h"
+#include "sql/histograms/json_flex.h"
 #include "sql/histograms/value_map.h"
 #include "sql/histograms/value_map_type.h"
 #include "test_utils.h"

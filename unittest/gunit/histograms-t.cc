@@ -35,6 +35,7 @@
 #include "sql/histograms/equi_height.h"  // Equi_height
 #include "sql/histograms/histogram.h"    // Histogram, Histogram_comparator
 #include "sql/histograms/singleton.h"    // Singleton
+#include "sql/histograms/json_flex.h"    // Json_flex
 #include "sql/histograms/value_map.h"    // Value_map<T>
 #include "sql/my_decimal.h"              // my_decimal
 #include "sql/sql_time.h"                // my_time_compare
@@ -271,6 +272,9 @@ void VerifyCommonJSONFields(Json_object *json_histogram,
       break;
     case Histogram::enum_histogram_type::SINGLETON:
       EXPECT_STREQ(json_histogram_type->value().c_str(), "singleton");
+      break;
+    case Histogram::enum_histogram_type::JSON_FLEX:
+      EXPECT_STREQ(json_histogram_type->value().c_str(), "json-flex");
       break;
   }
 

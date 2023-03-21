@@ -388,6 +388,7 @@ SET(SQL_SHARED_SOURCES
   histograms/equi_height_bucket.cc
   histograms/histogram.cc
   histograms/singleton.cc
+  histograms/json_flex.cc
   histograms/value_map.cc
   hostname_cache.cc
   init.cc
@@ -845,6 +846,7 @@ IF(APPLE_ARM)
     histograms/equi_height_bucket.cc
     histograms/histogram.cc
     histograms/singleton.cc
+    histograms/json_flex.cc
     histograms/value_map.cc
     COMPILE_FLAGS -fvisibility=hidden
     )

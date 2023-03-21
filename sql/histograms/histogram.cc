@@ -66,6 +66,7 @@
 #include "sql/handler.h"
 #include "sql/histograms/equi_height.h"  // Equi_height<T>
 #include "sql/histograms/singleton.h"    // Singleton<T>
+#include "sql/histograms/json_flex.h"    // Json_flex<T>
 #include "sql/histograms/value_map.h"    // Value_map
 #include "sql/item.h"
 #include "sql/item_json_func.h"  // parse_json
@@ -633,6 +634,46 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
     } else if (data_type->value() == "decimal") {
       histogram =
           Singleton<my_decimal>::create(mem_root, schema_name, table_name,
+                                        column_name, Value_map_type::DECIMAL);
+    } else {
+      context->report_node(data_type_dom, Message::JSON_UNSUPPORTED_DATA_TYPE);
+      return nullptr;
+    }
+  } else if (histogram_type->value() == Histogram::json_flex_str()) {
+    // Json_flex histogram
+    if (data_type->value() == "double") {
+      histogram =
+          Json_flex<double>::create(mem_root, schema_name, table_name,
+                                    column_name, Value_map_type::DOUBLE);
+    } else if (data_type->value() == "int") {
+      histogram = Json_flex<longlong>::create(mem_root, schema_name, table_name,
+                                              column_name, Value_map_type::INT);
+    } else if (data_type->value() == "enum") {
+      histogram = Json_flex<longlong>::create(
+          mem_root, schema_name, table_name, column_name, Value_map_type::ENUM);
+    } else if (data_type->value() == "set") {
+      histogram = Json_flex<longlong>::create(mem_root, schema_name, table_name,
+                                              column_name, Value_map_type::SET);
+    } else if (data_type->value() == "uint") {
+      histogram = Json_flex<ulonglong>::create(
+          mem_root, schema_name, table_name, column_name, Value_map_type::UINT);
+    } else if (data_type->value() == "string") {
+      histogram =
+          Json_flex<String>::create(mem_root, schema_name, table_name,
+                                    column_name, Value_map_type::STRING);
+    } else if (data_type->value() == "datetime") {
+      histogram =
+          Json_flex<MYSQL_TIME>::create(mem_root, schema_name, table_name,
+                                        column_name, Value_map_type::DATETIME);
+    } else if (data_type->value() == "date") {
+      histogram = Json_flex<MYSQL_TIME>::create(
+          mem_root, schema_name, table_name, column_name, Value_map_type::DATE);
+    } else if (data_type->value() == "time") {
+      histogram = Json_flex<MYSQL_TIME>::create(
+          mem_root, schema_name, table_name, column_name, Value_map_type::TIME);
+    } else if (data_type->value() == "decimal") {
+      histogram =
+          Json_flex<my_decimal>::create(mem_root, schema_name, table_name,
                                         column_name, Value_map_type::DECIMAL);
     } else {
       context->report_node(data_type_dom, Message::JSON_UNSUPPORTED_DATA_TYPE);
@@ -1793,6 +1834,7 @@ bool find_histogram(THD *thd, const std::string &schema_name,
 template <class T>
 double Histogram::get_less_than_selectivity_dispatcher(const T &value) const {
   switch (get_histogram_type()) {
+    case enum_histogram_type::JSON_FLEX:
     case enum_histogram_type::SINGLETON: {
       const Singleton<T> *singleton = down_cast<const Singleton<T> *>(this);
       return singleton->get_less_than_selectivity(value);
@@ -1813,6 +1855,7 @@ template <class T>
 double Histogram::get_greater_than_selectivity_dispatcher(
     const T &value) const {
   switch (get_histogram_type()) {
+    case enum_histogram_type::JSON_FLEX:
     case enum_histogram_type::SINGLETON: {
       const Singleton<T> *singleton = down_cast<const Singleton<T> *>(this);
       return singleton->get_greater_than_selectivity(value);
@@ -1832,6 +1875,7 @@ double Histogram::get_greater_than_selectivity_dispatcher(
 template <class T>
 double Histogram::get_equal_to_selectivity_dispatcher(const T &value) const {
   switch (get_histogram_type()) {
+    case enum_histogram_type::JSON_FLEX:
     case enum_histogram_type::SINGLETON: {
       const Singleton<T> *singleton = down_cast<const Singleton<T> *>(this);
       return singleton->get_equal_to_selectivity(value);

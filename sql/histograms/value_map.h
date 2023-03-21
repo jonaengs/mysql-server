@@ -50,6 +50,10 @@ class Histogram;
 template <class T>
 struct SingletonBucket;
 
+class Histogram;
+template <class T>
+struct JsonBucket;
+
 namespace equi_height {
 template <class T>
 class Bucket;
@@ -102,6 +106,14 @@ struct Histogram_comparator {
   }
 
   /**
+   * Same as above, but for json-flex histogram buckets.
+   */
+  template <class T>
+  bool operator()(const JsonBucket<T> &a, const T &b) const {
+    return Histogram_comparator()(a.value, b);
+  }
+
+  /**
     Used by std::upper_bound when computing greater-than selectivity in order to
     find the first bucket with an upper bound that is greater than a.
     Notice that the comparison function used by std::lower_bound and
@@ -118,6 +130,14 @@ struct Histogram_comparator {
    */
   template <class T>
   bool operator()(const T &a, const SingletonBucket<T> &b) const {
+    return Histogram_comparator()(a, b.value);
+  }
+
+  /**
+   * Same as above, but for json-flex histogram buckets.
+   */
+  template <class T>
+  bool operator()(const T &a, const JsonBucket<T> &b) const {
     return Histogram_comparator()(a, b.value);
   }
 
@@ -139,6 +159,15 @@ struct Histogram_comparator {
   template <class T>
   bool operator()(const SingletonBucket<T> &a,
                   const SingletonBucket<T> &b) const {
+    return Histogram_comparator()(a.value, b.value);
+  }
+
+  /**
+   * Same as above, but for json-flex histogram buckets.
+   */
+  template <class T>
+  bool operator()(const JsonBucket<T> &a,
+                  const JsonBucket<T> &b) const {
     return Histogram_comparator()(a.value, b.value);
   }
 };
