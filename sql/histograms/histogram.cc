@@ -1800,7 +1800,10 @@ bool find_histogram(THD *thd, const std::string &schema_name,
 template <class T>
 double Histogram::get_less_than_selectivity_dispatcher(const T &value) const {
   switch (get_histogram_type()) {
-    case enum_histogram_type::JSON_FLEX:
+    case enum_histogram_type::JSON_FLEX: {
+      const Json_flex *j_flex = down_cast<const Json_flex *>(this);
+      return j_flex->get_less_than_selectivity(0.0);
+    }
     case enum_histogram_type::SINGLETON: {
       const Singleton<T> *singleton = down_cast<const Singleton<T> *>(this);
       return singleton->get_less_than_selectivity(value);
@@ -1822,7 +1825,10 @@ template <class T>
 double Histogram::get_greater_than_selectivity_dispatcher(
     const T &value) const {
   switch (get_histogram_type()) {
-    case enum_histogram_type::JSON_FLEX:
+    case enum_histogram_type::JSON_FLEX: {
+      const Json_flex *j_flex = down_cast<const Json_flex *>(this);
+      return j_flex->get_greater_than_selectivity(0.0);
+    }
     case enum_histogram_type::SINGLETON: {
       const Singleton<T> *singleton = down_cast<const Singleton<T> *>(this);
       return singleton->get_greater_than_selectivity(value);
@@ -1842,7 +1848,10 @@ double Histogram::get_greater_than_selectivity_dispatcher(
 template <class T>
 double Histogram::get_equal_to_selectivity_dispatcher(const T &value) const {
   switch (get_histogram_type()) {
-    case enum_histogram_type::JSON_FLEX:
+    case enum_histogram_type::JSON_FLEX: {
+      const Json_flex *j_flex = down_cast<const Json_flex *>(this);
+      return j_flex->get_equal_to_selectivity(0.0);
+    }
     case enum_histogram_type::SINGLETON: {
       const Singleton<T> *singleton = down_cast<const Singleton<T> *>(this);
       return singleton->get_equal_to_selectivity(value);
