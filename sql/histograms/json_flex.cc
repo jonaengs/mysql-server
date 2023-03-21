@@ -45,8 +45,7 @@ struct MEM_ROOT;
 namespace histograms {
 
 // Private constructor
-template <class T>
-Json_flex<T>::Json_flex(MEM_ROOT *mem_root, const std::string &db_name,
+Json_flex::Json_flex(MEM_ROOT *mem_root, const std::string &db_name,
                         const std::string &tbl_name,
                         const std::string &col_name, Value_map_type data_type,
                         bool *error)
@@ -55,34 +54,19 @@ Json_flex<T>::Json_flex(MEM_ROOT *mem_root, const std::string &db_name,
       m_buckets(mem_root) {}
 
 // Public factory method
-template <class T>
-Json_flex<T> *Json_flex<T>::create(MEM_ROOT *mem_root,
+Json_flex *Json_flex::create(MEM_ROOT *mem_root,
                                    const std::string &db_name,
                                    const std::string &tbl_name,
                                    const std::string &col_name,
                                    Value_map_type data_type) {
   bool error = false;
-  Json_flex<T> *json_flex = new (mem_root)
-      Json_flex<T>(mem_root, db_name, tbl_name, col_name, data_type, &error);
+  Json_flex *json_flex = new (mem_root)
+      Json_flex(mem_root, db_name, tbl_name, col_name, data_type, &error);
   if (error) return nullptr;
   return json_flex;
 }
 
-template <class T>
-Json_flex<T>::Json_flex(MEM_ROOT *mem_root, const Json_flex<T> &other,
-                        bool *error)
-    : Histogram(mem_root, other, error), m_buckets(mem_root) {
-  if (m_buckets.reserve(other.m_buckets.size())) {
-    *error = true;
-    return;  // OOM
-  }
-  for (const auto &bucket : other.m_buckets) {
-    m_buckets.push_back(bucket);
-  }
-}
-
-template <>
-Json_flex<String>::Json_flex(MEM_ROOT *mem_root, const Json_flex<String> &other,
+Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
                              bool *error)
     : Histogram(mem_root, other, error), m_buckets(mem_root) {
   /*
@@ -104,12 +88,11 @@ Json_flex<String>::Json_flex(MEM_ROOT *mem_root, const Json_flex<String> &other,
     String string_dup(string_data, bucket.value.length(),
                       bucket.value.charset());
     m_buckets.push_back(
-        JsonBucket<String>(string_dup, bucket.cumulative_frequency));
+        JsonBucket(string_dup, bucket.cumulative_frequency));
   }
 }
 
-template <class T>
-bool Json_flex<T>::build_histogram(const Value_map<T> &value_map,
+bool Json_flex::build_histogram(const Value_map<String> &value_map,
                                    size_t num_buckets) {
   // Clear any existing data.
   m_buckets.clear();
@@ -152,14 +135,13 @@ bool Json_flex<T>::build_histogram(const Value_map<T> &value_map,
     cumulative_sum += node.second;
     const double cumulative_frequency =
         cumulative_sum / static_cast<double>(total_count);
-    m_buckets.push_back(JsonBucket<T>(node.first, cumulative_frequency));
+    m_buckets.push_back(JsonBucket(node.first, cumulative_frequency));
   }
 
   return false;
 }
 
-template <class T>
-bool Json_flex<T>::histogram_to_json(Json_object *json_object) const {
+bool Json_flex::histogram_to_json(Json_object *json_object) const {
   /*
     Call the base class implementation first. This will add the properties that
     are common among different histogram types, such as "last-updated" and
@@ -186,8 +168,7 @@ bool Json_flex<T>::histogram_to_json(Json_object *json_object) const {
   return false;
 }
 
-template <class T>
-bool Json_flex<T>::create_json_bucket(const JsonBucket<T> &bucket,
+bool Json_flex::create_json_bucket(const JsonBucket &bucket,
                                       Json_array *json_bucket) {
   // Value
   if (add_value_json_bucket(bucket.value, json_bucket))
@@ -200,17 +181,8 @@ bool Json_flex<T>::create_json_bucket(const JsonBucket<T> &bucket,
   return false;
 }
 
-template <>
-bool Json_flex<double>::add_value_json_bucket(const double &value,
-                                              Json_array *json_bucket) {
-  const Json_double json_value(value);
-  if (json_bucket->append_clone(&json_value))
-    return true; /* purecov: inspected */
-  return false;
-}
 
-template <>
-bool Json_flex<String>::add_value_json_bucket(const String &value,
+bool Json_flex::add_value_json_bucket(const String &value,
                                               Json_array *json_bucket) {
   const Json_opaque json_value(enum_field_types::MYSQL_TYPE_STRING, value.ptr(),
                                value.length());
@@ -219,67 +191,11 @@ bool Json_flex<String>::add_value_json_bucket(const String &value,
   return false;
 }
 
-template <>
-bool Json_flex<ulonglong>::add_value_json_bucket(const ulonglong &value,
-                                                 Json_array *json_bucket) {
-  const Json_uint json_value(value);
-  if (json_bucket->append_clone(&json_value))
-    return true; /* purecov: inspected */
-  return false;
-}
-
-template <>
-bool Json_flex<longlong>::add_value_json_bucket(const longlong &value,
-                                                Json_array *json_bucket) {
-  const Json_int json_value(value);
-  if (json_bucket->append_clone(&json_value))
-    return true; /* purecov: inspected */
-  return false;
-}
-
-template <>
-bool Json_flex<MYSQL_TIME>::add_value_json_bucket(const MYSQL_TIME &value,
-                                                  Json_array *json_bucket) {
-  enum_field_types field_type;
-  switch (value.time_type) {
-    case MYSQL_TIMESTAMP_DATE:
-      field_type = MYSQL_TYPE_DATE;
-      break;
-    case MYSQL_TIMESTAMP_DATETIME:
-      field_type = MYSQL_TYPE_DATETIME;
-      break;
-    case MYSQL_TIMESTAMP_TIME:
-      field_type = MYSQL_TYPE_TIME;
-      break;
-    default:
-      /* purecov: begin deadcode */
-      assert(false);
-      return true;
-      /* purecov: end */
-  }
-
-  const Json_datetime json_value(value, field_type);
-  if (json_bucket->append_clone(&json_value))
-    return true; /* purecov: inspected */
-  return false;
-}
-
-template <>
-bool Json_flex<my_decimal>::add_value_json_bucket(const my_decimal &value,
-                                                  Json_array *json_bucket) {
-  const Json_decimal json_value(value);
-  if (json_bucket->append_clone(&json_value))
-    return true; /* purecov: inspected */
-  return false;
-}
-
-template <class T>
-std::string Json_flex<T>::histogram_type_to_str() const {
+std::string Json_flex::histogram_type_to_str() const {
   return json_flex_str();
 }
 
-template <class T>
-bool Json_flex<T>::json_to_histogram(const Json_object &json_object,
+bool Json_flex::json_to_histogram(const Json_object &json_object,
                                      Error_context *context) {
   if (Histogram::json_to_histogram(json_object, context)) return true;
 
@@ -324,48 +240,13 @@ bool Json_flex<T>::json_to_histogram(const Json_object &json_object,
         down_cast<const Json_double *>(cumulative_frequency_dom);
 
     const Json_dom *value_dom = (*bucket)[0];
-    T value;
+    String value;
     if (extract_json_dom_value(value_dom, &value, context)) return true;
 
-    // Bucket extraction post-check
-    {
-      if ((cumulative_frequency->value() < 0.0) ||
-          (cumulative_frequency->value() > 1.0)) {
-        context->report_node(cumulative_frequency_dom,
-                             Message::JSON_INVALID_FREQUENCY);
-        return true;
-      }
-      if (context->check_value(&value)) {
-        context->report_node(value_dom, Message::JSON_VALUE_OUT_OF_RANGE);
-        return true;
-      }
-      // Check endpoint sequence and frequency sequence.
-      if (!m_buckets.empty()) {
-        JsonBucket<T> *last_bucket = &m_buckets[m_buckets.size() - 1];
-        if (!histograms::Histogram_comparator()(last_bucket->value, value)) {
-          context->report_node(value_dom, Message::JSON_VALUE_NOT_ASCENDING_1);
-          return true;
-        }
-        if (last_bucket->cumulative_frequency > cumulative_frequency->value()) {
-          context->report_node(
-              cumulative_frequency_dom,
-              Message::JSON_CUMULATIVE_FREQUENCY_NOT_ASCENDING);
-          return true;
-        }
-      }
-    }
 
     assert(m_buckets.capacity() > m_buckets.size());
     m_buckets.push_back(
-        JsonBucket<T>(value, cumulative_frequency->value()));
-  }
-  bool histogram_buckets_sorted = std::is_sorted(
-      m_buckets.begin(), m_buckets.end(), Histogram_comparator());
-  bool already_validated [[maybe_unused]] = context->binary();
-  assert(!already_validated || histogram_buckets_sorted);
-  if (!histogram_buckets_sorted) {
-    context->report_node(buckets_dom, Message::JSON_VALUE_NOT_ASCENDING_1);
-    return true;
+        JsonBucket(value, cumulative_frequency->value()));
   }
 
   // Global post-check
@@ -381,7 +262,7 @@ bool Json_flex<T>::json_to_histogram(const Json_object &json_object,
         return true;
       }
     } else {
-      JsonBucket<T> *last_bucket = &m_buckets[m_buckets.size() - 1];
+      JsonBucket *last_bucket = &m_buckets[m_buckets.size() - 1];
       float sum =
           last_bucket->cumulative_frequency + get_null_values_fraction();
       if (std::abs(sum - 1.0) > 0) {
@@ -393,77 +274,27 @@ bool Json_flex<T>::json_to_histogram(const Json_object &json_object,
   return false;
 }
 
-template <class T>
-Histogram *Json_flex<T>::clone(MEM_ROOT *mem_root) const {
+Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {
   DBUG_EXECUTE_IF("fail_histogram_clone", return nullptr;);
   bool error = false;
-  Histogram *json_flex = new (mem_root) Json_flex<T>(mem_root, *this, &error);
+  Histogram *json_flex = new (mem_root) Json_flex(mem_root, *this, &error);
   if (error) return nullptr;
   return json_flex;
 }
 
-template <class T>
-double Json_flex<T>::get_equal_to_selectivity(const T &value) const {
-  /*
-    Find the first histogram bucket where the value is not less than the
-    user-provided value.
-  */
-  const auto found = std::lower_bound(m_buckets.begin(), m_buckets.end(), value,
-                                      Histogram_comparator());
-
-  if (found == m_buckets.end()) return 0.0;
-
-  if (Histogram_comparator()(value, found->value) == 0) {
-    if (found == m_buckets.begin())
-      return found->cumulative_frequency;
-    else {
-      const auto previous = std::prev(found, 1);
-      return found->cumulative_frequency - previous->cumulative_frequency;
-    }
-  }
-
-  return 0.0;
+double Json_flex::get_equal_to_selectivity(const String &value) const {
+  if (value.length()) return 0.0;
+  return 1.0;
 }
 
-template <class T>
-double Json_flex<T>::get_less_than_selectivity(const T &value) const {
-  /*
-    Find the first histogram bucket where the value is not less than the
-    user-provided value.
-  */
-  const auto found = std::lower_bound(m_buckets.begin(), m_buckets.end(), value,
-                                      Histogram_comparator());
-  if (found == m_buckets.begin())
-    return 0.0;
-  else {
-    const auto previous = std::prev(found, 1);
-    return previous->cumulative_frequency;
-  }
+double Json_flex::get_less_than_selectivity(const String &value) const {
+  if (value.length()) return 0.0;
+  return 1.0;
 }
 
-template <class T>
-double Json_flex<T>::get_greater_than_selectivity(const T &value) const {
-  /*
-    Find the first histogram bucket where the value is greater than the
-    user-provided value.
-  */
-  const auto found = std::upper_bound(m_buckets.begin(), m_buckets.end(), value,
-                                      Histogram_comparator());
-
-  if (found == m_buckets.begin())
-    return get_non_null_values_fraction();
-  else {
-    const auto previous = std::prev(found, 1);
-    return get_non_null_values_fraction() - previous->cumulative_frequency;
-  }
+double Json_flex::get_greater_than_selectivity(const String &value) const {
+  if (value.length()) return 0.0;
+  return 1.0;
 }
-
-// Explicit template instantiations.
-template class Json_flex<double>;
-template class Json_flex<String>;
-template class Json_flex<ulonglong>;
-template class Json_flex<longlong>;
-template class Json_flex<MYSQL_TIME>;
-template class Json_flex<my_decimal>;
 
 }  // namespace histograms

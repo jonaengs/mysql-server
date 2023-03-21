@@ -641,40 +641,9 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
     }
   } else if (histogram_type->value() == Histogram::json_flex_str()) {
     // Json_flex histogram
-    if (data_type->value() == "double") {
-      histogram =
-          Json_flex<double>::create(mem_root, schema_name, table_name,
-                                    column_name, Value_map_type::DOUBLE);
-    } else if (data_type->value() == "int") {
-      histogram = Json_flex<longlong>::create(mem_root, schema_name, table_name,
-                                              column_name, Value_map_type::INT);
-    } else if (data_type->value() == "enum") {
-      histogram = Json_flex<longlong>::create(
-          mem_root, schema_name, table_name, column_name, Value_map_type::ENUM);
-    } else if (data_type->value() == "set") {
-      histogram = Json_flex<longlong>::create(mem_root, schema_name, table_name,
-                                              column_name, Value_map_type::SET);
-    } else if (data_type->value() == "uint") {
-      histogram = Json_flex<ulonglong>::create(
-          mem_root, schema_name, table_name, column_name, Value_map_type::UINT);
-    } else if (data_type->value() == "string") {
-      histogram =
-          Json_flex<String>::create(mem_root, schema_name, table_name,
-                                    column_name, Value_map_type::STRING);
-    } else if (data_type->value() == "datetime") {
-      histogram =
-          Json_flex<MYSQL_TIME>::create(mem_root, schema_name, table_name,
-                                        column_name, Value_map_type::DATETIME);
-    } else if (data_type->value() == "date") {
-      histogram = Json_flex<MYSQL_TIME>::create(
-          mem_root, schema_name, table_name, column_name, Value_map_type::DATE);
-    } else if (data_type->value() == "time") {
-      histogram = Json_flex<MYSQL_TIME>::create(
-          mem_root, schema_name, table_name, column_name, Value_map_type::TIME);
-    } else if (data_type->value() == "decimal") {
-      histogram =
-          Json_flex<my_decimal>::create(mem_root, schema_name, table_name,
-                                        column_name, Value_map_type::DECIMAL);
+    if (data_type->value() == "string") {
+      histogram = Json_flex::create(mem_root, schema_name, table_name,
+                                              column_name, Value_map_type::STRING);
     } else {
       context->report_node(data_type_dom, Message::JSON_UNSUPPORTED_DATA_TYPE);
       return nullptr;

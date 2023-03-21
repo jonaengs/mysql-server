@@ -91,26 +91,23 @@ namespace histograms {
   Json_flex histogram.
 
   Json_flex histograms do not have a public constructor, but are instead created
-  through the factory method Json_flex<T>::create() and returned by pointer.
+  through the factory method Json_flex::create() and returned by pointer.
   This is done to ensure that we can return nullptr in case memory allocations
   carried out during construction fail.
 
   Likewise, the Json_flex class does not have a public copy constructor, but
   instead implements a clone() method that returns nullptr in case of failure.
 */
-struct Histogram_comparator;
 template <class T>
 class Value_map;
 
-template <class T>
 struct JsonBucket {
-  T value;
+  String value;
   double cumulative_frequency;
-  JsonBucket(T value, double cumulative_frequency)
+  JsonBucket(String value, double cumulative_frequency)
       : value(value), cumulative_frequency(cumulative_frequency) {}
 };
 
-template <class T>
 class Json_flex : public Histogram {
  public:
   /**
@@ -130,7 +127,7 @@ class Json_flex : public Histogram {
     @return A pointer to a Json_flex histogram on success. Returns nullptr on
     error.
   */
-  static Json_flex<T> *create(MEM_ROOT *mem_root, const std::string &db_name,
+  static Json_flex *create(MEM_ROOT *mem_root, const std::string &db_name,
                               const std::string &tbl_name,
                               const std::string &col_name,
                               Value_map_type data_type);
@@ -144,7 +141,7 @@ class Json_flex : public Histogram {
   */
   Histogram *clone(MEM_ROOT *mem_root) const override;
 
-  Json_flex(const Json_flex<T> &other) = delete;
+  Json_flex(const Json_flex &other) = delete;
 
   /**
     Build the Json_flex histogram.
@@ -154,7 +151,7 @@ class Json_flex : public Histogram {
 
     @return  true on error, false otherwise
   */
-  bool build_histogram(const Value_map<T> &value_map, size_t num_buckets);
+  bool build_histogram(const Value_map<String> &value_map, size_t num_buckets);
 
   /**
     Convert this histogram to a JSON object.
@@ -202,7 +199,7 @@ class Json_flex : public Histogram {
 
     @return the selectivity between 0.0 and 1.0 inclusive.
   */
-  double get_equal_to_selectivity(const T &value) const;
+  double get_equal_to_selectivity(const String &value) const;
 
   /**
     Find the number of values less than 'value'.
@@ -214,7 +211,7 @@ class Json_flex : public Histogram {
 
     @return the selectivity between 0.0 and 1.0 inclusive.
   */
-  double get_less_than_selectivity(const T &value) const;
+  double get_less_than_selectivity(const String &value) const;
 
   /**
     Find the number of values greater than 'value'.
@@ -226,7 +223,7 @@ class Json_flex : public Histogram {
 
     @return the selectivity between 0.0 and 1.0 inclusive.
   */
-  double get_greater_than_selectivity(const T &value) const;
+  double get_greater_than_selectivity(const String &value) const;
 
  protected:
   /**
@@ -270,7 +267,7 @@ class Json_flex : public Histogram {
     @param other      the histogram to take a copy of
     @param[out] error is set to true if an error occurs
   */
-  Json_flex(MEM_ROOT *mem_root, const Json_flex<T> &other, bool *error);
+  Json_flex(MEM_ROOT *mem_root, const Json_flex &other, bool *error);
 
   /**
     Add value to a JSON bucket
@@ -282,7 +279,7 @@ class Json_flex : public Histogram {
 
     @return     true on error, false otherwise
   */
-  static bool add_value_json_bucket(const T &value, Json_array *json_bucket);
+  static bool add_value_json_bucket(const String &value, Json_array *json_bucket);
 
   /**
     Convert one bucket to a JSON object.
@@ -292,11 +289,11 @@ class Json_flex : public Histogram {
 
     @return     true on error, false otherwise
   */
-  static bool create_json_bucket(const JsonBucket<T> &bucket,
+  static bool create_json_bucket(const JsonBucket &bucket,
                                  Json_array *json_bucket);
 
   /// The buckets for this histogram [value, cumulative frequency].
-  Mem_root_array<JsonBucket<T>> m_buckets;
+  Mem_root_array<JsonBucket> m_buckets;
 };
 
 }  // namespace histograms
