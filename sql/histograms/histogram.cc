@@ -1800,6 +1800,78 @@ bool find_histogram(THD *thd, const std::string &schema_name,
   return false;
 }
 
+template <>
+double Histogram::get_less_than_selectivity_dispatcher(const String &value) const {
+  switch (get_histogram_type()) {
+    case enum_histogram_type::JSON_FLEX:{
+      const Json_flex *jflex = down_cast<const Json_flex *>(this);
+      return jflex->get_less_than_selectivity(value);
+    }
+    case enum_histogram_type::SINGLETON: {
+      const Singleton<String> *singleton = down_cast<const Singleton<String> *>(this);
+      return singleton->get_less_than_selectivity(value);
+    }
+    case enum_histogram_type::EQUI_HEIGHT: {
+      const Equi_height<String> *equi_height =
+          down_cast<const Equi_height<String> *>(this);
+      return equi_height->get_less_than_selectivity(value);
+    }
+  }
+  /* purecov: begin deadcode */
+  assert(false);
+  return 0.0;
+  /* purecov: end deadcode */
+}
+
+template <>
+double Histogram::get_greater_than_selectivity_dispatcher(
+    const String &value) const {
+  switch (get_histogram_type()) {
+    case enum_histogram_type::JSON_FLEX:{
+      const Json_flex *jflex = down_cast<const Json_flex *>(this);
+      return jflex->get_greater_than_selectivity(value);
+    }
+    case enum_histogram_type::SINGLETON: {
+      const Singleton<String> *singleton = down_cast<const Singleton<String> *>(this);
+      return singleton->get_greater_than_selectivity(value);
+    }
+    case enum_histogram_type::EQUI_HEIGHT: {
+      const Equi_height<String> *equi_height =
+          down_cast<const Equi_height<String> *>(this);
+      return equi_height->get_greater_than_selectivity(value);
+    }
+  }
+  /* purecov: begin deadcode */
+  assert(false);
+  return 0.0;
+  /* purecov: end deadcode */
+}
+
+template <>
+double Histogram::get_equal_to_selectivity_dispatcher(const String &value) const {
+  switch (get_histogram_type()) {
+    case enum_histogram_type::JSON_FLEX:{
+      const Json_flex *jflex = down_cast<const Json_flex *>(this);
+      return jflex->get_equal_to_selectivity(value);
+    }
+    case enum_histogram_type::SINGLETON: {
+      const Singleton<String> *singleton = down_cast<const Singleton<String> *>(this);
+      return singleton->get_equal_to_selectivity(value);
+    }
+    case enum_histogram_type::EQUI_HEIGHT: {
+      const Equi_height<String> *equi_height =
+          down_cast<const Equi_height<String> *>(this);
+      return equi_height->get_equal_to_selectivity(value);
+    }
+  }
+  /* purecov: begin deadcode */
+  assert(false);
+  return 0.0;
+  /* purecov: end deadcode */
+}
+
+
+
 template <class T>
 double Histogram::get_less_than_selectivity_dispatcher(const T &value) const {
   switch (get_histogram_type()) {

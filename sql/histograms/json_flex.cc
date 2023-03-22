@@ -226,18 +226,18 @@ Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {
 }
 
 double Json_flex::get_equal_to_selectivity(const String &value) const {
-  if (value.length()) return 0.0;
-  return 1.0;
+  if (!m_buckets.empty()) return m_buckets.at(0).frequency;
+  return 0.0 * value.length();
 }
 
 double Json_flex::get_less_than_selectivity(const String &value) const {
-  if (value.length()) return 0.0;
-  return 1.0;
+  if (!m_buckets.empty()) return m_buckets.at(0).frequency;
+  return 0.0 * value.length();
 }
 
 double Json_flex::get_greater_than_selectivity(const String &value) const {
-  if (value.length()) return 0.0;
-  return 1.0;
+  if (!m_buckets.empty()) return m_buckets.at(0).frequency;
+  return 0.0 * value.length();
 }
 
 }  // namespace histograms
