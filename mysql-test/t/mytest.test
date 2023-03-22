@@ -3,33 +3,25 @@
 --echo #########################################################################
 
 --echo # CREATE TABLE
-CREATE TABLE t(a varchar(2));
+CREATE TABLE t(j json);
 --echo # INSERT DATA
-INSERT INTO t VALUES("aa");
-INSERT INTO t VALUES("bb");
+INSERT INTO t VALUES("{}");
+INSERT INTO t VALUES("[]");
 
-
---echo # 
---echo # ATTEMPT SET JSON_FLEX
-ANALYZE TABLE t UPDATE HISTOGRAM ON a USING DATA 
+--echo  
+--echo ATTEMPT SET JSON_FLEX ON STRING COLUMN
+ANALYZE TABLE t UPDATE HISTOGRAM ON j USING DATA 
     -- Note: data-type must match data type of the column
-    '{"buckets": [["base64:type254:YWE=", 0.13, 0.2], ["base64:type254:YmI=", 0.13, 0.0]],
+    '{"buckets": [["base64:type254:YWE=", 0.5, 0.2], ["base64:type254:YmI=", 1.0, 0.0]],
     "histogram-type": "json-flex",
-    "data-type": "string",
+    "data-type": "json",
     "null-values": 0.0,
     "last-updated": "2023-02-27 16:13:14.0",
     "number-of-buckets-specified": 100,
-    "collation-id": 255,
+    "collation-id": 8,
     "sampling-rate": 1.0}';
 
-
---echo # 
---echo # CHECK THAT EVERYTHING WORKS AS EXPECTED
-SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'a';
-
-
---echo # 
---echo # CHECK SELECTIVITY USAGE
-SET OPTIMIZER_TRACE = "enabled=on";
-SELECT * FROM t AS t1 JOIN t AS t2 ON t1.a = t2.a  WHERE t1.a = "aa";
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo # SHOW HISTOGRAM
+SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'j';
+--echo # QUERY t
+SELECT * FROM t;

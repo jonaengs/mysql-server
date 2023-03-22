@@ -40,7 +40,8 @@ enum class Value_map_type {
   TIME,
   DATETIME,
   ENUM,
-  SET
+  SET,
+  JSON,
 };
 
 }  // namespace histograms

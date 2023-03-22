@@ -1543,6 +1543,8 @@ enum_json_type ValueMapTypeToJsonType(Value_map_type value_type) {
       return enum_json_type::J_UINT;
     case Value_map_type::SET:
       return enum_json_type::J_UINT;
+    case Value_map_type::JSON:
+      return enum_json_type::J_OBJECT; // Can be any JSON type, really
   }
   return enum_json_type::J_ERROR;
 }

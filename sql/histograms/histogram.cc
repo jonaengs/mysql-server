@@ -112,7 +112,8 @@ static std::map<const Value_map_type, const std::string> value_map_type_to_str =
      {Value_map_type::TIME, "time"},         {Value_map_type::INT, "int"},
      {Value_map_type::UINT, "uint"},         {Value_map_type::DOUBLE, "double"},
      {Value_map_type::DECIMAL, "decimal"},   {Value_map_type::STRING, "string"},
-     {Value_map_type::ENUM, "enum"},         {Value_map_type::SET, "set"}};
+     {Value_map_type::ENUM, "enum"},         {Value_map_type::SET, "set"},
+     {Value_map_type::JSON, "json"}};
 
 void *Histogram_psi_key_alloc::operator()(size_t s) const {
   return my_malloc(key_memory_histograms, s, MYF(MY_WME | ME_FATALERROR));
@@ -171,6 +172,7 @@ static Value_map_type field_type_to_value_map_type(
     case MYSQL_TYPE_VARCHAR:
       return Value_map_type::STRING;
     case MYSQL_TYPE_JSON:
+      return Value_map_type::JSON;
     case MYSQL_TYPE_GEOMETRY:
     case MYSQL_TYPE_NULL:
     case MYSQL_TYPE_INVALID:
@@ -641,7 +643,10 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
     }
   } else if (histogram_type->value() == Histogram::json_flex_str()) {
     // Json_flex histogram
-    if (data_type->value() == "string") {
+    if (data_type->value() == "json") {
+      histogram = Json_flex::create(mem_root, schema_name, table_name,
+                                              column_name, Value_map_type::STRING);
+    } else if (data_type->value() == "string") {
       histogram = Json_flex::create(mem_root, schema_name, table_name,
                                               column_name, Value_map_type::STRING);
     } else {
@@ -1050,6 +1055,7 @@ static bool prepare_value_maps(
         histograms::field_type_to_value_map_type(field);
 
     switch (value_map_type) {
+      case histograms::Value_map_type::JSON:
       case histograms::Value_map_type::STRING: {
         size_t max_field_length =
             std::min(static_cast<size_t>(field->field_length),
@@ -1159,6 +1165,7 @@ static bool fill_value_maps(
           value_maps.at(field->field_index()).get();
 
       switch (histograms::field_type_to_value_map_type(field)) {
+        case histograms::Value_map_type::JSON:
         case histograms::Value_map_type::STRING: {
           StringBuffer<MAX_FIELD_WIDTH> str_buf(field->charset());
           field->val_str(&str_buf);
@@ -1336,7 +1343,8 @@ bool update_histogram(THD *thd, Table_ref *table, const columns_set &columns,
       // Field not found in table
       results.emplace(column_name, Message::FIELD_NOT_FOUND);
       continue;
-    } else if (histograms::field_type_to_value_map_type(field) ==
+    } 
+    else if (histograms::field_type_to_value_map_type(field) ==
                histograms::Value_map_type::INVALID) {
       // Unsupported data type
       results.emplace(column_name, Message::UNSUPPORTED_DATA_TYPE);
@@ -1988,6 +1996,7 @@ bool Histogram::get_selectivity_dispatcher(Item *item, const enum_operator op,
       return true;
       /* purecov: end deadcode */
     }
+    case Value_map_type::JSON:
     case Value_map_type::STRING: {
       // Is the character set the same? If not, we cannot use the histogram
       if (item->collation.collation->number != get_character_set()->number)

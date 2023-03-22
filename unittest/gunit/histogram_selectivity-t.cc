@@ -256,6 +256,8 @@ std::string ValueMapTypeToString(Value_map_type type) {
       return "ENUM";
     case Value_map_type::SET:
       return "SET";
+    case Value_map_type::JSON:
+      return "JSON";
   }
   return "Error";
 }
@@ -388,6 +390,7 @@ TEST_F(HistogramSelectivityTest, EquiHeightSelectivity) {
                 number_of_buckets);
             break;
           }
+          case Value_map_type::JSON: // ??? Don't keep. Just here to stop compiler complaining
           case Value_map_type::STRING:
             VerifySelectivityEstimates<String>(
                 &m_mem_root, &my_charset_utf8mb4_0900_ai_ci, histogram_type,
