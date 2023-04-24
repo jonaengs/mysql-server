@@ -91,7 +91,7 @@ bool simplify_string_args(THD *thd, const DTCollation &c, Item **items,
 String *eval_string_arg(const CHARSET_INFO *to_cs, Item *arg, String *buffer);
 
 class Item_func : public Item_result_field {
- protected:
+ public:
   /**
      Array of pointers to arguments. If there are max 2 arguments, this array
      is often just m_embedded_arguments; otherwise it's explicitly allocated in

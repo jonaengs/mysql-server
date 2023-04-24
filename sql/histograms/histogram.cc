@@ -1811,10 +1811,9 @@ bool find_histogram(THD *thd, const std::string &schema_name,
 template <>
 double Histogram::get_less_than_selectivity_dispatcher(const String &value) const {
   switch (get_histogram_type()) {
-    case enum_histogram_type::JSON_FLEX:{
-      const Json_flex *jflex = down_cast<const Json_flex *>(this);
-      return jflex->get_less_than_selectivity(value);
-    }
+    // NOTE: The JSON_FLEX case here is completely broken. It's only here make the compiler happy.
+    // Remove or make assert(false) or something
+    case enum_histogram_type::JSON_FLEX:
     case enum_histogram_type::SINGLETON: {
       const Singleton<String> *singleton = down_cast<const Singleton<String> *>(this);
       return singleton->get_less_than_selectivity(value);
@@ -1835,10 +1834,7 @@ template <>
 double Histogram::get_greater_than_selectivity_dispatcher(
     const String &value) const {
   switch (get_histogram_type()) {
-    case enum_histogram_type::JSON_FLEX:{
-      const Json_flex *jflex = down_cast<const Json_flex *>(this);
-      return jflex->get_greater_than_selectivity(value);
-    }
+    case enum_histogram_type::JSON_FLEX:
     case enum_histogram_type::SINGLETON: {
       const Singleton<String> *singleton = down_cast<const Singleton<String> *>(this);
       return singleton->get_greater_than_selectivity(value);
@@ -1858,10 +1854,7 @@ double Histogram::get_greater_than_selectivity_dispatcher(
 template <>
 double Histogram::get_equal_to_selectivity_dispatcher(const String &value) const {
   switch (get_histogram_type()) {
-    case enum_histogram_type::JSON_FLEX:{
-      const Json_flex *jflex = down_cast<const Json_flex *>(this);
-      return jflex->get_equal_to_selectivity(value);
-    }
+    case enum_histogram_type::JSON_FLEX:
     case enum_histogram_type::SINGLETON: {
       const Singleton<String> *singleton = down_cast<const Singleton<String> *>(this);
       return singleton->get_equal_to_selectivity(value);
@@ -2199,9 +2192,11 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
         items_flipped[0] = items[1];
         items_flipped[1] = items[0];
         return get_selectivity(items_flipped, item_count, op, selectivity);
-      } else if (items[0]->type() != Item::FIELD_ITEM ||
-                 !items[1]->const_item()) {
-        return true;
+      } else if ((items[0]->type() != Item::FIELD_ITEM 
+                  // Don't return error (yet) if the item was a func_item and it was passed to a JSON_FLEX histogram
+                  && (items[0]->type() != Item::FUNC_ITEM && m_hist_type != enum_histogram_type::JSON_FLEX))
+                || !items[1]->const_item()) {
+          return true;
       }
       break;
     case enum_operator::BETWEEN:
@@ -2231,6 +2226,44 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
       if (items[0]->type() != Item::FIELD_ITEM) return true;
   }
 
+  // Handle *all* selectivity estimation for JSON_FLEX in this block
+  // Anything in the histogram.cc file outside this block is likely broken
+  if (m_hist_type == enum_histogram_type::JSON_FLEX) {
+    // For now, only handle json functions.
+    if (items[0]->type() != Item::FUNC_ITEM) {
+      return true;
+    }
+    // Recursively find the field item, 
+    // checking that we're encountering the functions
+    // we expect, and the arguments we expect them to have
+
+    Item_func *func = static_cast<Item_func*>(items[0]->real_item());
+    std::string path("");
+    if (Json_flex::build_histogram_query_string(func, items[1], path)) {
+      return true;
+    }
+
+    // TODO: We want to pass both the json key-path and the const value (items[1])
+    // to the selectivity estimator. 
+    const Json_flex *jflex = down_cast<const Json_flex *>(this);
+    switch(op) {
+      case enum_operator::EQUALS_TO: {
+        *selectivity = jflex->get_equal_to_selectivity(path);
+        break;
+      }
+      case enum_operator::LESS_THAN: {
+        *selectivity = jflex->get_less_than_selectivity(path);
+        break;
+      }
+      case enum_operator::GREATER_THAN: {
+        *selectivity = jflex->get_greater_than_selectivity(path);
+        break;
+      }
+      default: return true;
+    }
+
+    return false;
+  }
   assert(items[0]->type() == Item::FIELD_ITEM);
 
   const TYPELIB *typelib = nullptr;

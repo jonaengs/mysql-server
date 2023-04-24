@@ -39,6 +39,8 @@
 #include "sql-common/json_dom.h"       // Json_*
 #include "sql/histograms/value_map.h"  // Value_map
 #include "template_utils.h"
+#include "sql/item.h"
+#include "sql/item_func.h"
 
 struct MEM_ROOT;
 
@@ -225,17 +227,73 @@ Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {
   return json_flex;
 }
 
-double Json_flex::get_equal_to_selectivity(const String &value) const {
+bool Json_flex::build_histogram_query_string(Item_func *func, Item *comparand, std::string &builder) {
+  // Currently, we'll handle the JSON_EXTRACT function.
+  // JSON_EXTRACT form: db, table, col, path
+  // It takes a json_doc (simplifying assumption: a column), and a string path
+
+  // JSON_EXTRACT seems to have FuncType: UNKNOWN_FUNC
+  // TODO: Try using the func_name() method instead.
+  size_t path_idx;
+  if (func->func_name() == std::string("json_extract")) path_idx = 1;
+  else if (func->func_name() == std::string("json_value")) path_idx = 0;
+  else return true;
+  
+  Item *json_path_arg = func->args[path_idx]->real_item();
+  
+  // Copy string value in function argument
+  StringBuffer<MAX_FIELD_WIDTH> str_buf(json_path_arg->collation.collation);
+  std::string str = to_string(*json_path_arg->val_str(&str_buf));
+  // const String *arg_path = json_path_arg->val_str(&str_buf);
+  // std::string str = to_string(*arg_path);
+
+  // Query string should start with '$' and be longer than only that char
+  if (str.length() < 2 || str.at(0) != '$') return true;
+  
+  builder.append(str.substr(1, str.length())); // Append everything except the $
+
+  // TODO: Use built-in json stuff to deal with parsing the path?
+
+  // TODO: CHECK item.data_type() and corresponding m_data_type property.
+  // TODO: Check out Item_param. Is that what function params are?
+
+
+  // Check that we're comparing against a constant value (?)
+  if (!comparand->const_item()) return true;
+
+  // TODO: we can access the operands value here by using comparand->val_X(), where X is int, double, string
+  switch(comparand->type()) {
+    // TODO: Do we differentiate between doubles and floats??
+    case Item::Type::INT_ITEM: {
+      builder.append("_num");
+      break;
+    }
+    case Item::Type::REAL_ITEM: {
+      builder.append("_num");
+      break;
+    }
+    case Item::Type::STRING_ITEM: {
+      builder.append("_str");
+      break;
+    }
+    default: return true;
+  }
+
+  // Attempt to expand output buffer and copy built string into it
+  return false;  
+}
+
+double Json_flex::get_equal_to_selectivity(const std::string &value) const {
   if (!m_buckets.empty()) return m_buckets.at(0).frequency;
   return 0.0 * value.length();
 }
 
-double Json_flex::get_less_than_selectivity(const String &value) const {
+double Json_flex::get_less_than_selectivity(const std::string &value) const {
   if (!m_buckets.empty()) return m_buckets.at(0).frequency;
   return 0.0 * value.length();
 }
 
-double Json_flex::get_greater_than_selectivity(const String &value) const {
+double Json_flex::get_greater_than_selectivity(const std::string &value) const {
   if (!m_buckets.empty()) return m_buckets.at(0).frequency;
   return 0.0 * value.length();
 }

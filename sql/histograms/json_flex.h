@@ -80,6 +80,8 @@
 #include "sql/mem_root_array.h"
 #include "sql/my_decimal.h"
 #include "sql_string.h"
+#include "sql/item.h"
+#include "sql/item_func.h"
 
 class Json_array;
 class Json_object;
@@ -192,7 +194,7 @@ class Json_flex : public Histogram {
 
     @return the selectivity between 0.0 and 1.0 inclusive.
   */
-  double get_equal_to_selectivity(const String &value) const;
+  double get_equal_to_selectivity(const std::string &value) const;
 
   /**
     Find the number of values less than 'value'.
@@ -204,7 +206,7 @@ class Json_flex : public Histogram {
 
     @return the selectivity between 0.0 and 1.0 inclusive.
   */
-  double get_less_than_selectivity(const String &value) const;
+  double get_less_than_selectivity(const std::string &value) const;
 
   /**
     Find the number of values greater than 'value'.
@@ -216,7 +218,19 @@ class Json_flex : public Histogram {
 
     @return the selectivity between 0.0 and 1.0 inclusive.
   */
-  double get_greater_than_selectivity(const String &value) const;
+  double get_greater_than_selectivity(const std::string &value) const;
+
+
+  /**
+    Build the string used to query the histogram for selectivity of the given operand (assumed const)
+
+  @param func          The Item_func of the json function: JSON_EXTRACT, JSON_CONTAINS, ...
+    @param comparand   The argument to the function -- usually the compare value
+    @param builder     The buffer in which the path will be built
+
+    TODO: consider making func have the Item_json_func type instead
+  */
+  static bool build_histogram_query_string(Item_func *func, Item *right_operand, std::string &builder);
 
  protected:
   /**
@@ -229,7 +243,6 @@ class Json_flex : public Histogram {
    */
   bool json_to_histogram(const Json_object &json_object,
                          Error_context *context) override;
-
  private:
   /// Expected length of a json representation of the Json_flex bucket
   static constexpr size_t json_bucket_member_count() { return JSON_BUCKET_MEMBER_COUNT; }
