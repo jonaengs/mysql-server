@@ -707,6 +707,13 @@ class Item_func : public Item_result_field {
   const Item_field *contributes_to_filter(
       table_map read_tables, table_map filter_for_table,
       const MY_BITMAP *fields_to_ignore) const;
+
+
+  /**
+   Helper method for contributes_to_filter. 
+  */
+  Item_field* get_func_child_field();
+
   /**
     Named parameters are allowed in a parameter list
 

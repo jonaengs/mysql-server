@@ -194,7 +194,7 @@ class Json_flex : public Histogram {
 
     @return the selectivity between 0.0 and 1.0 inclusive.
   */
-  double get_equal_to_selectivity(const std::string &value) const;
+  double get_equal_to_selectivity(const String &value) const;
 
   /**
     Find the number of values less than 'value'.
@@ -206,7 +206,7 @@ class Json_flex : public Histogram {
 
     @return the selectivity between 0.0 and 1.0 inclusive.
   */
-  double get_less_than_selectivity(const std::string &value) const;
+  double get_less_than_selectivity(const String &value) const;
 
   /**
     Find the number of values greater than 'value'.
@@ -218,7 +218,7 @@ class Json_flex : public Histogram {
 
     @return the selectivity between 0.0 and 1.0 inclusive.
   */
-  double get_greater_than_selectivity(const std::string &value) const;
+  double get_greater_than_selectivity(const String &value) const;
 
 
   /**
@@ -248,6 +248,8 @@ class Json_flex : public Histogram {
   static constexpr size_t json_bucket_member_count() { return JSON_BUCKET_MEMBER_COUNT; }
   /// String representation of the histogram type JSON_FLEX.
   static constexpr const char *json_flex_str() { return "json-flex"; }
+  /// Minimum frequency encountered in the bucket. Any value not found should have lower frequency
+  double min_frequency = 0.0321; // Make easily recognizable for now. TODO: Set to 0.0 
 
   /**
     Json_flex constructor.

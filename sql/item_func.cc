@@ -883,22 +883,21 @@ Item *Item_func::get_tmp_table_item(THD *thd) {
   return result;
 }
 
-// const Item_field* Item_func::get_func_child_field() {
-//   // Recurseively traverses Item_func objects until a field child is found
-//   // Currently, only look in first child recursively until we find a field
-//   for (uint i = 0; i < func->arg_count; i++) {
-//     Item *child = func->args[0]->real_item();
-//     if (child->type() == Item::FUNC_ITEM) {
-//       Item_func *child_func = static_cast<Item_func *>(child->real_item());
-//       return child_func.get_func_child_field();
-//     }
-//     else if (child->type() == Item::FIELD_ITEM) {
-//       Item_field *fld = static_cast<Item_field *>(child);
-//       return fld;
-//     }
-//   }
-//   return nullptr;
-// }
+Item_field* Item_func::get_func_child_field() {
+  // Recurseively traverses Item_func objects until a field child is found
+  for (uint i = 0; i < arg_count; i++) {
+    Item *child = args[0]->real_item();
+    if (child->type() == Item::FUNC_ITEM) {
+      Item_func *child_func = static_cast<Item_func *>(child->real_item());
+      return child_func->get_func_child_field();
+    }
+    else if (child->type() == Item::FIELD_ITEM) {
+      Item_field *fld = static_cast<Item_field *>(child);
+      return fld;
+    }
+  }
+  return nullptr;
+}
 
 const Item_field *Item_func::contributes_to_filter(
     table_map read_tables, table_map filter_for_table,
@@ -987,22 +986,15 @@ const Item_field *Item_func::contributes_to_filter(
       // ALSO: i_have_no_idea_what_im_doing_computer_dog.jpeg
       
       Item_func *func = static_cast<Item_func *>(args[i]->real_item());
-      
-      if (func->arg_count >= 1) {
-        Item *child = func->args[0]->real_item();
-        if (child->type() == Item::FIELD_ITEM) {
+      Item_field *fld = func->get_func_child_field();
+      if (fld) {
           // This body is copied from previous if-statement
-
-          Item_field *fld = static_cast<Item_field *>(child);
-
           if (bitmap_is_set(fields_to_ignore, fld->field->field_index()) || usable_field)                                                  // 2)
           {
             found_comparable = true;
             continue;
           }
-
           usable_field = fld;
-          }
       }
     }
     else {
