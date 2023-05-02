@@ -2233,11 +2233,8 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
     if (items[0]->type() != Item::FUNC_ITEM) {
       return true;
     }
-    // Recursively find the field item, 
-    // checking that we're encountering the functions
-    // we expect, and the arguments we expect them to have
 
-    Item_func *func = static_cast<Item_func*>(items[0]->real_item());
+    Item_func *func = static_cast<Item_func *>(items[0]->real_item());
     std::string path("");
     if (Json_flex::build_histogram_query_string(func, items[1], path)) {
       return true;
@@ -2246,7 +2243,7 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
     // TODO: We want to pass both the json key-path and the const value (items[1])
     // to the selectivity estimator. 
     const Json_flex *jflex = down_cast<const Json_flex *>(this);
-    const String arg_path = String(path.c_str(), path.length()+1, m_charset);
+    const String arg_path = String(path.c_str(), path.length(), m_charset);
     switch(op) {
       case enum_operator::EQUALS_TO: {
         *selectivity = jflex->get_equal_to_selectivity(arg_path);

@@ -5,16 +5,21 @@
 --echo # CREATE TABLE
 CREATE TABLE t(j json);
 --echo # INSERT DATA
-INSERT INTO t VALUES("{}");
-INSERT INTO t VALUES("[1]");
-INSERT INTO t VALUES("[1]");
-INSERT INTO t VALUES("[2]");
+INSERT INTO t VALUES("[{\"objs\": [0, 1, 2, 3]}]");
+INSERT INTO t VALUES("[{\"objs\": [1, 2, 3, 0]}]");
+INSERT INTO t VALUES("[{\"objs\": [2, 3, 0, 1]}]");
+INSERT INTO t VALUES("[{\"objs\": [3, 0, 1, 2]}]");
 
 --echo  
 --echo ATTEMPT SET JSON_FLEX ON STRING COLUMN
 ANALYZE TABLE t UPDATE HISTOGRAM ON j USING DATA 
     -- Note: data-type must match data type of the column
-    '{"buckets": [["base64:type254:YWE=", 0.123, 0.2], ["base64:type254:YmI=", 0.234, 0.0]],
+    '{"buckets": [
+        ["base64:type254:MF9vYmoub2Jqc19hcnIuMF9udW0=", 0.345, 0.0],
+        ["base64:type254:MF9vYmoub2Jqc19hcnIuMV9udW0=", 0.456, 0.0],
+        ["base64:type254:YWE=", 0.123, 0.2],
+        ["base64:type254:YmI=", 0.234, 0.0]
+    ],
     "histogram-type": "json-flex",
     "data-type": "json",
     "null-values": 0.0,
@@ -33,5 +38,10 @@ SET OPTIMIZER_TRACE = "enabled=on";
 --echo #
 # EXPLAIN SELECT * FROM t WHERE t.j->"$[0]" = "1";
 # SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-EXPLAIN SELECT * FROM t WHERE t.j->>"$[0]" = 1;
+# EXPLAIN SELECT * FROM t WHERE t.j->>"$[0]" = 1;
+
+EXPLAIN SELECT * FROM t WHERE t.j->>"$[0].objs[0]" = 1;
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+
+EXPLAIN SELECT * FROM t WHERE t.j->>"$[0].objs[1]" = 1;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;

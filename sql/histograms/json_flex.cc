@@ -228,17 +228,13 @@ Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {
   return json_flex;
 }
 
-enum class PathType {
-  ARR,
-  OBJ,
-  PRIMITIVE,
-};
-const char type_sep = '_';
-const char key_sep = '.';
+
+// Separators used when building the histogram query string
+const std::string TYPE_SEP = "_";
+const std::string KEY_SEP = ".";
 
 bool Json_flex::build_histogram_query_string(Item_func *func, Item *comparand, std::string &builder) {
   // Currently, we'll handle the JSON_EXTRACT function.
-  // JSON_EXTRACT form: db, table, col, path
   // It takes a json_doc (simplifying assumption: a column), and a string path
 
 
@@ -254,41 +250,79 @@ bool Json_flex::build_histogram_query_string(Item_func *func, Item *comparand, s
     innermost_func = static_cast<Item_json_func *>(func);
   }
   
+  // Find the index of the child containing the json path argument
   size_t path_idx;
   if (innermost_func->func_name() == std::string("json_extract")) path_idx = 1;
   else if (innermost_func->func_name() == std::string("json_unquote")) path_idx = 0;
   else return true;
-  
   // TODO: Support for JSON_MEMBEROF and JSON_CONTAINS will require rewriting this first part
   
-  
-  Item *json_path_arg = innermost_func->args[path_idx]->real_item();
-  
+
   // Copy string value in function argument
+  Item *json_path_arg = innermost_func->args[path_idx]->real_item();
   StringBuffer<MAX_FIELD_WIDTH> str_buf(json_path_arg->collation.collation);
   std::string str = to_string(*json_path_arg->val_str(&str_buf));
 
-  // Query string should start with '$' and be longer than only that char
-  if (str.length() < 2 || str.at(0) != '$') return true;
-  builder.append(str.substr(1, str.length())); // Append everything except the $
-  
   
   // Parse the argument query string to build a string to query the histogram with
-  // TODO
+  // Example query string: docs[0].history.edits[5].datetime
+  auto iterator_start = str.begin() + 1; // Skip the '$'
+  auto iterator_end = str.begin() + 1;
 
+outer_loop:
+  while (iterator_end != str.end()) {
+    if (*iterator_end == '.') {
+      iterator_end += 1;
+      iterator_start += 1;
+    }
 
-  // We're parsing a very limited language, so creating a small ad-hoc parser should be fine?
+    // Array keys are simple -- they always start with [
+    if (*iterator_end == '[') {
+      iterator_start += 1; // skip the bracket
+      
+      // go to the end of the bracket
+      do {
+        iterator_end += 1;
+      } while (*iterator_end != ']');
+      
+      // Append type information to previous key, if one exists
+      if (builder.size() > 0) {
+        builder.append(TYPE_SEP);
+        builder.append("arr");
+        builder.append(KEY_SEP);
+      }
 
+      builder.append(std::string(iterator_start, iterator_end));
+      iterator_end += 1; // move past the ']'
+    } else {
+      // differentiating between objects and terminals is not as simple.
+      // We have to go forward until we find an object or array accessor
+      // or until we reach the end of the string.
+      while (*iterator_end != '.' && *iterator_end != '[') {
+        iterator_end += 1;
 
-  // TODO: Use built-in json stuff to deal with parsing the path?
+        // We found the terminal
+        if (iterator_end == str.end()) {
+          builder.append(std::string(iterator_start, iterator_end));
+          goto outer_loop;
+        }
+      }
 
-  // TODO: CHECK item.data_type() and corresponding m_data_type property.
-  // TODO: Check out Item_param. Is that what function params are?
+      // Append type information to previous key, if one exists
+      if (builder.size() > 0) {
+          builder.append(TYPE_SEP);
+          builder.append("obj");
+          builder.append(KEY_SEP);
+      }
+      builder.append(std::string(iterator_start, iterator_end));
+    }
+    // if (iterator_end != str.end()) builder.append(KEY_SEP);
+    iterator_start = iterator_end;
+  }
 
 
   // Check that we're comparing against a constant value (?)
   if (!comparand->const_item()) return true;
-
 
   // If the JSON_VALUE is not called (i.e., -> is used instead of ->>), we can't use the type of of the comparand
   // and will have to lookup the key path for all terminal types. 
@@ -308,6 +342,7 @@ bool Json_flex::build_histogram_query_string(Item_func *func, Item *comparand, s
         builder.append("_str");
         break;
       }
+      // TODO: Do we handle json_memberof/json_contains arguments here?
       default: return true;
     }
   }
