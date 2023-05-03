@@ -91,12 +91,13 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
     String string_dup(string_data, bucket.key_path.length(),
                       bucket.key_path.charset());
 
-    JsonBucket copy(string_dup, bucket.frequency, bucket.null_values, bucket.values_type,
-                   bucket.min_val.has_value() ? std::optional(*bucket.min_val) : std::nullopt, 
-                   bucket.max_val.has_value() ? std::optional(*bucket.max_val) : std::nullopt
+    JsonBucket copy(string_dup, bucket.frequency, bucket.null_values,
+                    bucket.min_val.has_value() ? std::optional(*bucket.min_val) : std::nullopt, 
+                    bucket.max_val.has_value() ? std::optional(*bucket.max_val) : std::nullopt,
+                    bucket.values_type
                   );
 
-    if (bucket.values_type != BucketType::UNKNOWN) {
+    if (bucket.values_type != BucketValueType::UNKNOWN) {
       // If one of the optionals is included, the other should be as well
       assert(bucket.min_val && bucket.max_val);
       assert(copy.min_val && copy.max_val);
@@ -158,29 +159,29 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
 
   // this is broken for doubles. TODO: FIX
   // Assume that in min_val is defined, then max_val will be as well
-  if (bucket.values_type != BucketType::UNKNOWN) {
+  if (bucket.values_type != BucketValueType::UNKNOWN) {
     switch (bucket.values_type) {
-      case BucketType::INT: {
+      case BucketValueType::INT: {
         if (add_value_json_bucket((*bucket.min_val)._int, json_bucket)) return true;
         if (add_value_json_bucket((*bucket.max_val)._int, json_bucket)) return true;
         break;
       }
-      case BucketType::FLOAT: {
+      case BucketValueType::FLOAT: {
         if (add_value_json_bucket((*bucket.min_val)._float, json_bucket)) return true;
         if (add_value_json_bucket((*bucket.max_val)._float, json_bucket)) return true;
         break;
       }
-      case BucketType::BOOL: {
+      case BucketValueType::BOOL: {
         if (add_value_json_bucket((*bucket.min_val)._bool, json_bucket)) return true;
         if (add_value_json_bucket((*bucket.max_val)._bool, json_bucket)) return true;
         break;
       }
-      case BucketType::STRING: {
+      case BucketValueType::STRING: {
         // TODO
         assert(false);
         return true;
       }
-      case BucketType::UNKNOWN: {
+      case BucketValueType::UNKNOWN: {
         // unreachable
         assert(false);
         break;
@@ -278,15 +279,15 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     if (extract_json_dom_value(null_values_dom, &null_values, context)) return true;
 
 
-    std::optional<number> min_val_opt;
-    std::optional<number> max_val_opt;
-    BucketType values_type = BucketType::UNKNOWN;
+    std::optional<json_primitive> min_val_opt;
+    std::optional<json_primitive> max_val_opt;
+    BucketValueType values_type = BucketValueType::UNKNOWN;
     if (bucket->size() == allowed_size_all) {
       // GET FOURTH BUCKET ITEM: min_val
       const Json_dom *min_val_dom = (*bucket)[3];
       const Json_dom *max_val_dom = (*bucket)[4];
-      number min_val;
-      number max_val;
+      json_primitive min_val;
+      json_primitive max_val;
 
       if (min_val_dom->json_type() != max_val_dom->json_type()) {
         context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
@@ -295,17 +296,17 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       if (min_val_dom->json_type() == enum_json_type::J_DOUBLE) {
         if (extract_json_dom_value(min_val_dom, &(min_val._float), context)) return true;
         if (extract_json_dom_value(max_val_dom, &(max_val._float), context)) return true;
-        values_type = BucketType::FLOAT;
+        values_type = BucketValueType::FLOAT;
       } else if (min_val_dom->json_type() == enum_json_type::J_BOOLEAN) {
         if (extract_json_dom_value(min_val_dom, &min_val._int, context)) return true;
         if (extract_json_dom_value(max_val_dom, &max_val._int, context)) return true;
-        values_type = BucketType::BOOL;
+        values_type = BucketValueType::BOOL;
       }
       else if (min_val_dom->json_type() == enum_json_type::J_INT ||
                  min_val_dom->json_type() == enum_json_type::J_UINT) {
         if (extract_json_dom_value(min_val_dom, &min_val._int, context)) return true;
         if (extract_json_dom_value(max_val_dom, &max_val._int, context)) return true;
-        values_type = BucketType::INT;
+        values_type = BucketValueType::INT;
       }
       else {
         context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
@@ -319,7 +320,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     
 
     // STORE BUCKET IN HISTOGRAM
-    JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values, values_type, min_val_opt, max_val_opt);
+    JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values, min_val_opt, max_val_opt, values_type);
     assert(m_buckets.capacity() > m_buckets.size());
     m_buckets.push_back(hist_bucket);
   }

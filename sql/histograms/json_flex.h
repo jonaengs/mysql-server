@@ -36,7 +36,7 @@ namespace histograms {
 template <class T>
 class Value_map;
 
-enum class BucketType {
+enum class BucketValueType {
   UNKNOWN,
   INT,
   FLOAT,
@@ -45,12 +45,12 @@ enum class BucketType {
 };
 
 // TODO: Rename to "json_primitve" or something
-union number {
+union json_primitive {
   double _float;
   longlong _int; // May lead to trouble when/if a longlong can't accommodate the same range as a json int (double) can.
   bool _bool;
 };
-typedef std::optional<number> maybe_number;
+typedef std::optional<json_primitive> maybe_number;
 
 
 // NOTE: When adding new members, take care to handle:
@@ -65,20 +65,25 @@ struct JsonBucket {
   const String key_path;
   const double frequency;
   const double null_values; // Frequency with which the key_path leads to null (distinct from not being present)
-  const BucketType values_type;
   const maybe_number min_val;
   const maybe_number max_val;
+  // const std::optional<longlong> ndv;
+
+  // Assigned at creation.
+  const BucketValueType values_type;
 
   JsonBucket(String key_path, double frequency, double null_values)
       : key_path(key_path), frequency(frequency),
-        null_values(null_values), values_type(BucketType::UNKNOWN),
-        min_val(std::nullopt), max_val(std::nullopt){}
+        null_values(null_values),
+        min_val(std::nullopt), max_val(std::nullopt),
+        values_type(BucketValueType::UNKNOWN){}
 
-  JsonBucket(String key_path, double frequency, double null_values, BucketType values_type,
-             maybe_number min_val, maybe_number max_val)
+  JsonBucket(String key_path, double frequency, double null_values,
+             maybe_number min_val, maybe_number max_val, BucketValueType values_type)
       : key_path(key_path), frequency(frequency),
-        null_values(null_values), values_type(values_type),
-        min_val(min_val), max_val(max_val){}
+        null_values(null_values),
+        min_val(min_val), max_val(max_val),
+        values_type(values_type){}
 };
 
 class Json_flex : public Histogram {
@@ -131,13 +136,13 @@ class Json_flex : public Histogram {
   bool histogram_to_json(Json_object *json_object) const override;
 
   /**
-    @return number of values/buckets in this histogram
+    @return json_primitive of values/buckets in this histogram
   */
   size_t get_num_buckets() const override { return m_buckets.size(); }
 
   /**
-    Get the estimated number of distinct non-NULL values.
-    @return number of distinct non-NULL values
+    Get the estimated json_primitive of distinct non-NULL values.
+    @return json_primitive of distinct non-NULL values
 
     TODO(christiani): If the histogram is based on sampling, then this estimate
     is potentially off by a factor 1/sampling_rate. It should be adjusted to an
