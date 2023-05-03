@@ -2146,7 +2146,9 @@ bool Histogram::get_selectivity(Item **items, size_t item_count,
     We could improve this estimate by considering the actual number of pages
     sampled when the histogram was constructed.
   */
-  const double minimum_selectivity = 0.001;
+
+  // Allow 0 selectivity if all pages were sampled
+  const double minimum_selectivity = get_sampling_rate() >= 1.0 ? 0.0 : 0.001;
   *selectivity = std::max(*selectivity, minimum_selectivity);
   return false;
 }

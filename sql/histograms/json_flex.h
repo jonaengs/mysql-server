@@ -43,18 +43,20 @@ union number {
 typedef std::optional<number> maybe_number;
 
 
+// NOTE: When adding new members, take care to handle:
+// * Copy constructor
+// * histogram_to_json
+// * json_to_histogram
+// * create_json_bucket
+// * (if a new type was added): Add a new add_value_json_bucket for the type
 #define JSON_BUCKET_TOTAL_MEMBER_COUNT 5
 #define JSON_BUCKET_OPTIONAL_MEMBER_COUNT 2
 struct JsonBucket {
-  String key_path;
-  double frequency;
-  double null_values;
-  maybe_number min_val;
-  maybe_number max_val;
-  JsonBucket(String key_path, double frequency, double null_values)
-      : key_path(key_path), frequency(frequency),
-        null_values(null_values), min_val(std::nullopt),
-        max_val(std::nullopt){}
+  const String key_path;
+  const double frequency;
+  const double null_values; // Frequency with which the key_path leads to null (distinct from not being present)
+  const maybe_number min_val;
+  const maybe_number max_val;
 
   JsonBucket(String key_path, double frequency, double null_values, maybe_number min_val, maybe_number max_val)
       : key_path(key_path), frequency(frequency),
@@ -230,6 +232,7 @@ class Json_flex : public Histogram {
   */
   static bool add_value_json_bucket(const String &value, Json_array *json_bucket);
   static bool add_value_json_bucket(const double &value, Json_array *json_bucket);
+  static bool add_value_json_bucket(const longlong &value, Json_array *json_bucket);
 
   /**
     Convert one bucket to a JSON object.
