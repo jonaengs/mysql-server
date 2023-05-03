@@ -91,9 +91,11 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
     String string_dup(string_data, bucket.key_path.length(),
                       bucket.key_path.charset());
 
+    // TODO: Remove the ternary operations. Likely unnecessary.
     JsonBucket copy(string_dup, bucket.frequency, bucket.null_values,
                     bucket.min_val.has_value() ? std::optional(*bucket.min_val) : std::nullopt, 
                     bucket.max_val.has_value() ? std::optional(*bucket.max_val) : std::nullopt,
+                    bucket.ndv.has_value() ? std::optional(*bucket.ndv) : std::nullopt,
                     bucket.values_type
                   );
 
@@ -104,10 +106,14 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
       // Copied values should match
       assert((*copy.min_val)._int == (*bucket.min_val)._int);
       assert((*copy.max_val)._int == (*bucket.max_val)._int);
+
+      // Either all optionals or none are included. So if min/max is in the bucket, ndv should be as well
+      assert(bucket.ndv && copy.ndv);
     } else {
       // If the value type is unknown, the optionals should not be set
       assert(!bucket.min_val && !bucket.max_val);
       assert(!copy.min_val && !copy.max_val);
+      assert(!bucket.ndv && !copy.ndv);
     }
 
     m_buckets.push_back(copy);
@@ -187,6 +193,9 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
         break;
       }
     }
+    
+    // Add NDV
+    if (add_value_json_bucket(*bucket.ndv, json_bucket)) return true;
   }
   
   return false;
@@ -271,7 +280,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     const Json_dom *frequency_dom = (*bucket)[1];
     double frequency;
     if (extract_json_dom_value(frequency_dom, &frequency, context)) return true;
-    
+    min_frequency = std::min(min_frequency, frequency); // Set minimum frequency found across all buckets
 
     // GET THIRD BUCKET ITEM: null_values
     const Json_dom *null_values_dom = (*bucket)[2];
@@ -281,6 +290,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
 
     std::optional<json_primitive> min_val_opt;
     std::optional<json_primitive> max_val_opt;
+    std::optional<longlong> ndv_opt;
     BucketValueType values_type = BucketValueType::UNKNOWN;
     if (bucket->size() == allowed_size_all) {
       // GET FOURTH BUCKET ITEM: min_val
@@ -316,11 +326,18 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       min_val_opt = min_val;
       max_val_opt = max_val;
       // TODO: look at final type string in the key path to figure out type of min and max value
+
+
+      // GET FIFTH BUCKET: NDV
+      const Json_dom *ndv_dom = (*bucket)[5];
+      longlong ndv;
+      if (extract_json_dom_value(ndv_dom, &ndv, context)) return true;
+      ndv_opt = ndv;
     }
     
 
     // STORE BUCKET IN HISTOGRAM
-    JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values, min_val_opt, max_val_opt, values_type);
+    JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values, min_val_opt, max_val_opt, ndv_opt, values_type);
     assert(m_buckets.capacity() > m_buckets.size());
     m_buckets.push_back(hist_bucket);
   }
@@ -550,7 +567,7 @@ double Json_flex::lookup_bucket(const String &path, const double cmp_val) const 
         return 0.0;
       }
     }
-    return bucket->frequency;
+    return bucket->frequency * (1.0 - bucket->null_values);
   }
   return min_frequency;
 }
@@ -562,18 +579,12 @@ double Json_flex::lookup_bucket(const String &path, const longlong cmp_val) cons
     if (bucket->min_val && bucket->max_val) {
       if ((*bucket->min_val)._int > cmp_val || (*bucket->max_val)._int < cmp_val) {
         return 0.0;
-      }
+      } 
     }
     return bucket->frequency * (1.0 - bucket->null_values);
   }
   return min_frequency;
 }
-
-// template<>
-// double Json_flex::lookup_bucket(const String &path, const String &cmp_val) const {
-//   auto _ = cmp_val; // stop unused param warning
-//   return lookup_bucket(path);
-// }
 
 template<>
 double Json_flex::lookup_bucket(const String &path, String cmp_val) const {
@@ -591,28 +602,38 @@ double Json_flex::lookup_bucket(const String &path) const {
 
 template<typename T>
 double Json_flex::get_equal_to_selectivity(const String &path, T cmp_val) const {
-  return lookup_bucket(path, cmp_val);
+  double base_selectivity = lookup_bucket(path, cmp_val);
+  auto bucket = find_bucket(path);
+  if (bucket && (*bucket)->ndv) {
+    return base_selectivity / *(*bucket)->ndv;
+  }
+  return base_selectivity * 0.1;
 }
+
 template<typename T>
 double Json_flex::get_less_than_selectivity(const String &path, T cmp_val) const {
-  return lookup_bucket(path, cmp_val);
+  return lookup_bucket(path, cmp_val) * 0.3;
 }
 template<typename T>
 double Json_flex::get_greater_than_selectivity(const String &path, T cmp_val) const {
-  return lookup_bucket(path, cmp_val);
+  return lookup_bucket(path, cmp_val) * 0.3;
 }
 
-
 double Json_flex::get_equal_to_selectivity(const String &path) const {
-  return lookup_bucket(path);
+  double base_selectivity = lookup_bucket(path);
+  auto bucket = find_bucket(path);
+  if (bucket && (*bucket)->ndv) {
+    return base_selectivity / *(*bucket)->ndv;
+  }
+  return base_selectivity * 0.1;
 }
 
 double Json_flex::get_less_than_selectivity(const String &path) const {
-  return lookup_bucket(path);
+  return lookup_bucket(path) * 0.3;
 }
 
 double Json_flex::get_greater_than_selectivity(const String &path) const {
-  return lookup_bucket(path);
+  return lookup_bucket(path) * 0.3;
 }
 
 }  // namespace histograms

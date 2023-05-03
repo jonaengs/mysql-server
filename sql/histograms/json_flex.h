@@ -59,15 +59,17 @@ typedef std::optional<json_primitive> maybe_number;
 // * json_to_histogram
 // * create_json_bucket
 // * (if a new type was added): Add a new add_value_json_bucket for the type
-#define JSON_BUCKET_TOTAL_MEMBER_COUNT 5
-#define JSON_BUCKET_OPTIONAL_MEMBER_COUNT 2
+#define JSON_BUCKET_TOTAL_MEMBER_COUNT 6
+#define JSON_BUCKET_OPTIONAL_MEMBER_COUNT 3
 struct JsonBucket {
   const String key_path;
   const double frequency;
   const double null_values; // Frequency with which the key_path leads to null (distinct from not being present)
+
+  // Optional members
   const maybe_number min_val;
   const maybe_number max_val;
-  // const std::optional<longlong> ndv;
+  const std::optional<longlong> ndv;
 
   // Assigned at creation.
   const BucketValueType values_type;
@@ -76,13 +78,15 @@ struct JsonBucket {
       : key_path(key_path), frequency(frequency),
         null_values(null_values),
         min_val(std::nullopt), max_val(std::nullopt),
+        ndv(std::nullopt),
         values_type(BucketValueType::UNKNOWN){}
 
   JsonBucket(String key_path, double frequency, double null_values,
-             maybe_number min_val, maybe_number max_val, BucketValueType values_type)
+             maybe_number min_val, maybe_number max_val, std::optional<longlong> ndv, BucketValueType values_type)
       : key_path(key_path), frequency(frequency),
         null_values(null_values),
         min_val(min_val), max_val(max_val),
+        ndv(ndv),
         values_type(values_type){}
 };
 
@@ -212,7 +216,7 @@ class Json_flex : public Histogram {
   /// String representation of the histogram type JSON_FLEX.
   static constexpr const char *json_flex_str() { return "json-flex"; }
   /// Minimum frequency encountered in the bucket. Any value not found should have lower frequency
-  double min_frequency = 0.0321; // Make easily recognizable for now. TODO: Set to 0.0 
+  double min_frequency = 1.0; // Make easily recognizable for now. TODO: Set to 1.0 
 
   /**
     Json_flex constructor.
