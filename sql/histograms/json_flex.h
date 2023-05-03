@@ -36,9 +36,19 @@ namespace histograms {
 template <class T>
 class Value_map;
 
+enum class BucketType {
+  UNKNOWN,
+  INT,
+  FLOAT,
+  STRING,
+  BOOL,
+};
+
+// TODO: Rename to "json_primitve" or something
 union number {
   double _float;
   longlong _int; // May lead to trouble when/if a longlong can't accommodate the same range as a json int (double) can.
+  bool _bool;
 };
 typedef std::optional<number> maybe_number;
 
@@ -55,13 +65,20 @@ struct JsonBucket {
   const String key_path;
   const double frequency;
   const double null_values; // Frequency with which the key_path leads to null (distinct from not being present)
+  const BucketType values_type;
   const maybe_number min_val;
   const maybe_number max_val;
 
-  JsonBucket(String key_path, double frequency, double null_values, maybe_number min_val, maybe_number max_val)
+  JsonBucket(String key_path, double frequency, double null_values)
       : key_path(key_path), frequency(frequency),
-        null_values(null_values), min_val(min_val),
-        max_val(max_val){}
+        null_values(null_values), values_type(BucketType::UNKNOWN),
+        min_val(std::nullopt), max_val(std::nullopt){}
+
+  JsonBucket(String key_path, double frequency, double null_values, BucketType values_type,
+             maybe_number min_val, maybe_number max_val)
+      : key_path(key_path), frequency(frequency),
+        null_values(null_values), values_type(values_type),
+        min_val(min_val), max_val(max_val){}
 };
 
 class Json_flex : public Histogram {
@@ -233,6 +250,7 @@ class Json_flex : public Histogram {
   static bool add_value_json_bucket(const String &value, Json_array *json_bucket);
   static bool add_value_json_bucket(const double &value, Json_array *json_bucket);
   static bool add_value_json_bucket(const longlong &value, Json_array *json_bucket);
+  static bool add_value_json_bucket(const bool &value, Json_array *json_bucket);
 
   /**
     Convert one bucket to a JSON object.

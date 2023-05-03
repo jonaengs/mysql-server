@@ -16,7 +16,8 @@ ANALYZE TABLE t UPDATE HISTOGRAM ON j USING DATA
     -- Note: data-type must match data type of the column
     '{"buckets": [
         ["base64:type254:MF9vYmoub2Jqc19hcnIuMF9udW0=", 0.345, 0.0, 0, 3],
-        ["base64:type254:MF9vYmoub2Jqc19hcnIuMV9udW0=", 0.456, 0.0, 0, 3]
+        ["base64:type254:MF9vYmoub2Jqc19hcnIuMV9udW0=", 0.456, 0.0, 0, 3],
+        ["base64:type254:YWE=", 0.131313, 0.0]
     ],
     "histogram-type": "json-flex",
     "data-type": "json",
@@ -33,9 +34,6 @@ ANALYZE TABLE t UPDATE HISTOGRAM ON j USING DATA
 SET OPTIMIZER_TRACE = "enabled=on";
 
 
---echo 
-# EXPLAIN SELECT * FROM t WHERE t.j->"$[0]" = "1";
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo
 --echo 
 --echo 
@@ -44,6 +42,7 @@ SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIM
 --echo 
 --echo 
 --echo 
+# TODO: FIGURE OUT WHY THE -1 QUERY ACTS SO WEIRD
 EXPLAIN SELECT * FROM t WHERE t.j->>"$[0].objs[0]" = -1;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
@@ -60,5 +59,10 @@ SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIM
 --echo 
 --echo 
 EXPLAIN SELECT * FROM t WHERE t.j->>"$[2].objs[2]" = 0;
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+--echo 
+--echo 
+EXPLAIN SELECT * FROM t WHERE t.j->"$aa" = 0;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 

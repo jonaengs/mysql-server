@@ -91,19 +91,22 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
     String string_dup(string_data, bucket.key_path.length(),
                       bucket.key_path.charset());
 
-    JsonBucket copy(string_dup, bucket.frequency, bucket.null_values,
+    JsonBucket copy(string_dup, bucket.frequency, bucket.null_values, bucket.values_type,
                    bucket.min_val.has_value() ? std::optional(*bucket.min_val) : std::nullopt, 
                    bucket.max_val.has_value() ? std::optional(*bucket.max_val) : std::nullopt
                   );
 
-    if (bucket.min_val || bucket.max_val) {
+    if (bucket.values_type != BucketType::UNKNOWN) {
       // If one of the optionals is included, the other should be as well
-      assert(bucket.max_val);
-      assert(copy.min_val);
-      assert(copy.max_val);
+      assert(bucket.min_val && bucket.max_val);
+      assert(copy.min_val && copy.max_val);
       // Copied values should match
       assert((*copy.min_val)._int == (*bucket.min_val)._int);
       assert((*copy.max_val)._int == (*bucket.max_val)._int);
+    } else {
+      // If the value type is unknown, the optionals should not be set
+      assert(!bucket.min_val && !bucket.max_val);
+      assert(!copy.min_val && !copy.max_val);
     }
 
     m_buckets.push_back(copy);
@@ -155,12 +158,34 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
 
   // this is broken for doubles. TODO: FIX
   // Assume that in min_val is defined, then max_val will be as well
-  if (bucket.min_val) {
-    if (add_value_json_bucket((*bucket.min_val)._int, json_bucket))
-      return true;
-
-    if (add_value_json_bucket((*bucket.max_val)._int, json_bucket))
-      return true;
+  if (bucket.values_type != BucketType::UNKNOWN) {
+    switch (bucket.values_type) {
+      case BucketType::INT: {
+        if (add_value_json_bucket((*bucket.min_val)._int, json_bucket)) return true;
+        if (add_value_json_bucket((*bucket.max_val)._int, json_bucket)) return true;
+        break;
+      }
+      case BucketType::FLOAT: {
+        if (add_value_json_bucket((*bucket.min_val)._float, json_bucket)) return true;
+        if (add_value_json_bucket((*bucket.max_val)._float, json_bucket)) return true;
+        break;
+      }
+      case BucketType::BOOL: {
+        if (add_value_json_bucket((*bucket.min_val)._bool, json_bucket)) return true;
+        if (add_value_json_bucket((*bucket.max_val)._bool, json_bucket)) return true;
+        break;
+      }
+      case BucketType::STRING: {
+        // TODO
+        assert(false);
+        return true;
+      }
+      case BucketType::UNKNOWN: {
+        // unreachable
+        assert(false);
+        break;
+      }
+    }
   }
   
   return false;
@@ -183,6 +208,11 @@ bool Json_flex::add_value_json_bucket(const double &value,
 bool Json_flex::add_value_json_bucket(const longlong &value,
                                               Json_array *json_bucket) {
   const Json_int json_value(value);
+  return json_bucket->append_clone(&json_value);
+}
+bool Json_flex::add_value_json_bucket(const bool &value,
+                                              Json_array *json_bucket) {
+  const Json_boolean json_value(value);
   return json_bucket->append_clone(&json_value);
 }
 
@@ -250,6 +280,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
 
     std::optional<number> min_val_opt;
     std::optional<number> max_val_opt;
+    BucketType values_type = BucketType::UNKNOWN;
     if (bucket->size() == allowed_size_all) {
       // GET FOURTH BUCKET ITEM: min_val
       const Json_dom *min_val_dom = (*bucket)[3];
@@ -257,14 +288,24 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       number min_val;
       number max_val;
 
-      assert(min_val_dom->json_type() == max_val_dom->json_type());
+      if (min_val_dom->json_type() != max_val_dom->json_type()) {
+        context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
+        return true;
+      }
       if (min_val_dom->json_type() == enum_json_type::J_DOUBLE) {
         if (extract_json_dom_value(min_val_dom, &(min_val._float), context)) return true;
         if (extract_json_dom_value(max_val_dom, &(max_val._float), context)) return true;
-      } else if (min_val_dom->json_type() == enum_json_type::J_INT ||
+        values_type = BucketType::FLOAT;
+      } else if (min_val_dom->json_type() == enum_json_type::J_BOOLEAN) {
+        if (extract_json_dom_value(min_val_dom, &min_val._int, context)) return true;
+        if (extract_json_dom_value(max_val_dom, &max_val._int, context)) return true;
+        values_type = BucketType::BOOL;
+      }
+      else if (min_val_dom->json_type() == enum_json_type::J_INT ||
                  min_val_dom->json_type() == enum_json_type::J_UINT) {
         if (extract_json_dom_value(min_val_dom, &min_val._int, context)) return true;
         if (extract_json_dom_value(max_val_dom, &max_val._int, context)) return true;
+        values_type = BucketType::INT;
       }
       else {
         context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
@@ -278,7 +319,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     
 
     // STORE BUCKET IN HISTOGRAM
-    JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values, min_val_opt, max_val_opt);
+    JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values, values_type, min_val_opt, max_val_opt);
     assert(m_buckets.capacity() > m_buckets.size());
     m_buckets.push_back(hist_bucket);
   }
@@ -384,6 +425,7 @@ bool Json_flex::get_selectivity(Item_func *func, Item *comparand, enum_operator 
       case Item::Type::NULL_ITEM: {
         // TODO: Handle = NULL
         // Will we have to handle >, =<, ... here?
+        assert(false);
         return true;
       }
       default: return true;
@@ -400,6 +442,8 @@ const std::string TYPE_SEP = "_";
 const std::string KEY_SEP = ".";
 
 bool Json_flex::build_histogram_query_string(Item *json_path_arg, Item *comparand, bool arg_type_certain, std::string &builder) {
+  // TODO: How do we include boolean queries? THey don't seem to take an arg, so we don't have a comparand
+
   // Copy string value in function argument  
   StringBuffer<MAX_FIELD_WIDTH> str_buf(json_path_arg->collation.collation);
   std::string str = to_string(*json_path_arg->val_str(&str_buf));
