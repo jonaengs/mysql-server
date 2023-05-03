@@ -2234,30 +2234,20 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
       return true;
     }
 
-    Item_func *func = static_cast<Item_func *>(items[0]->real_item());
-    std::string path("");
-    if (Json_flex::build_histogram_query_string(func, items[1], path)) {
-      return true;
+    // Filter out operators that we do not support
+    switch (op) {
+      case enum_operator::EQUALS_TO:
+      case enum_operator::LESS_THAN:
+      case enum_operator::GREATER_THAN:
+        break;
+      default: return true;      
     }
 
-    // TODO: We want to pass both the json key-path and the const value (items[1])
-    // to the selectivity estimator. 
+    // Lookup selectivity in the json flex histogram
     const Json_flex *jflex = down_cast<const Json_flex *>(this);
-    const String arg_path = String(path.c_str(), path.length(), m_charset);
-    switch(op) {
-      case enum_operator::EQUALS_TO: {
-        *selectivity = jflex->get_equal_to_selectivity(arg_path);
-        break;
-      }
-      case enum_operator::LESS_THAN: {
-        *selectivity = jflex->get_less_than_selectivity(arg_path);
-        break;
-      }
-      case enum_operator::GREATER_THAN: {
-        *selectivity = jflex->get_greater_than_selectivity(arg_path);
-        break;
-      }
-      default: return true;
+    Item_func *func = static_cast<Item_func *>(items[0]->real_item());
+    if (jflex->get_selectivity(func, items[1], op, selectivity)) {
+      return true;
     }
 
     *selectivity = std::max(

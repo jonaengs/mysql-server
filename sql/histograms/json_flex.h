@@ -1,73 +1,6 @@
 #ifndef HISTOGRAMS_JSON_FLEX_INCLUDED
 #define HISTOGRAMS_JSON_FLEX_INCLUDED
 
-/* Copyright (c) 2016, 2022, Oracle and/or its affiliates.
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License, version 2.0,
-   as published by the Free Software Foundation.
-
-   This program is also distributed with certain software (including
-   but not limited to OpenSSL) that is licensed under separate terms,
-   as designated in a particular file or component or in included license
-   documentation.  The authors of MySQL hereby grant you an additional
-   permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License, version 2.0, for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
-
-/**
-  @file sql/histograms/json_flex.h
-  Json_flex histogram.
-
-  This file defines the Json_flex histogram. A Json_flex histogram is a
-  histogram where only a value and it's frequency is stored. It allows us to
-  use less storage space, as well as estimating selectivity a bit more
-  efficient.
-
-  A json_flex histogram converted to a JSON object, follows the following
-  "schema":
-
-  {
-    // Last time the histogram was updated. As of now, this means "when the
-    // histogram was created" (incremental updates are not supported). Date/time
-    // is given in UTC.
-    // -- J_DATETIME
-    "last-updated": "2015-11-04 15:19:51.000000",
-
-    // Histogram type. Always "json_flex" for json_flex histograms.
-    // -- J_STRING
-    "histogram-type": "json_flex",
-
-    // Fraction of NULL values. This is the total fraction of NULL values in the
-    // original data set.
-    // -- J_DOUBLE
-    "null-values": 0.1,
-
-    // Histogram buckets. May be an empty array, if for instance the source
-    // only contains NULL values.
-    // -- J_ARRAY
-    "buckets":
-    [
-      [
-        // Value
-        // -- Data type depends on the source column.
-        42,
-
-        // Cumulative frequency
-        // -- J_DOUBLE
-        0.001978728666831561
-      ]
-    ]
-  }
-*/
 
 #include <stddef.h>
 #include <string>  // std::string
@@ -103,14 +36,30 @@ namespace histograms {
 template <class T>
 class Value_map;
 
-#define JSON_BUCKET_MEMBER_COUNT 3
+union number {
+  double _float;
+  longlong _int; // May lead to trouble when/if a longlong can't accommodate the same range as a json int (double) can.
+};
+typedef std::optional<number> maybe_number;
+
+
+#define JSON_BUCKET_TOTAL_MEMBER_COUNT 5
+#define JSON_BUCKET_OPTIONAL_MEMBER_COUNT 2
 struct JsonBucket {
   String key_path;
   double frequency;
   double null_values;
+  maybe_number min_val;
+  maybe_number max_val;
   JsonBucket(String key_path, double frequency, double null_values)
       : key_path(key_path), frequency(frequency),
-        null_values(null_values) {}
+        null_values(null_values), min_val(std::nullopt),
+        max_val(std::nullopt){}
+
+  JsonBucket(String key_path, double frequency, double null_values, maybe_number min_val, maybe_number max_val)
+      : key_path(key_path), frequency(frequency),
+        null_values(null_values), min_val(min_val),
+        max_val(max_val){}
 };
 
 class Json_flex : public Histogram {
@@ -185,53 +134,35 @@ class Json_flex : public Histogram {
   std::string histogram_type_to_str() const override;
 
   /**
-    Find the number of values equal to 'value'.
-
-    This function will estimate the number of values that is equal to the
-    provided value.
-
-    @param value The value to estimate the selectivity for.
-
-    @return the selectivity between 0.0 and 1.0 inclusive.
-  */
-  double get_equal_to_selectivity(const String &value) const;
-
-  /**
-    Find the number of values less than 'value'.
-
-    This function will estimate the number of values that is less than the
-    provided value.
-
-    @param value The value to estimate the selectivity for.
-
-    @return the selectivity between 0.0 and 1.0 inclusive.
-  */
-  double get_less_than_selectivity(const String &value) const;
-
-  /**
-    Find the number of values greater than 'value'.
-
-    This function will estimate the number of values that is greater than the
-    provided value.
-
-    @param value The value to estimate the selectivity for.
-
-    @return the selectivity between 0.0 and 1.0 inclusive.
-  */
-  double get_greater_than_selectivity(const String &value) const;
-
-
-  /**
-    Build the string used to query the histogram for selectivity of the given operand (assumed const)
-
-  @param func          The Item_func of the json function: JSON_EXTRACT, JSON_CONTAINS, ...
+  
+    @param func        The Item_func of the json function: JSON_EXTRACT, JSON_CONTAINS, ...
     @param comparand   The argument to the function -- usually the compare value
-    @param builder     The buffer in which the path will be built
+    @param op          The operator type
+    @param selectivity Double into which the found selectivity will be placed
 
     TODO: consider making func have the Item_json_func type instead
   */
-  static bool build_histogram_query_string(Item_func *func, Item *right_operand, std::string &builder);
+  bool get_selectivity(Item_func *func, Item *comparand, enum_operator op, double *selectivity) const;
 
+
+  double get_equal_to_selectivity(const String &path) const;
+  double get_less_than_selectivity(const String &path) const;
+  double get_greater_than_selectivity(const String &path) const;
+  
+  template<typename T>
+  double get_equal_to_selectivity(const String &path, const T value) const;
+  template<typename T>
+  double get_less_than_selectivity(const String &path, const T value) const;
+  template<typename T>
+  double get_greater_than_selectivity(const String &path, const T value) const;
+
+  // HELPER FUNCTIONS:
+
+  std::optional<const JsonBucket *> find_bucket(const String &path) const;
+  double lookup_bucket(const String &path) const;
+  template<typename T>
+  double lookup_bucket(const String &path, const T cmp_val) const;
+  
  protected:
   /**
     Populate this histogram with contents from a JSON object.
@@ -243,9 +174,17 @@ class Json_flex : public Histogram {
    */
   bool json_to_histogram(const Json_object &json_object,
                          Error_context *context) override;
+
+
  private:
+  /**
+    Build the string used to query the histogram for selectivity of the given operand
+  */
+  static bool build_histogram_query_string(Item *json_path_arg, Item *comparand, bool arg_type_certain, std::string &builder);
+
   /// Expected length of a json representation of the Json_flex bucket
-  static constexpr size_t json_bucket_member_count() { return JSON_BUCKET_MEMBER_COUNT; }
+  static constexpr size_t json_bucket_total_member_count() { return JSON_BUCKET_TOTAL_MEMBER_COUNT; }
+  static constexpr size_t json_bucket_optional_member_count() { return JSON_BUCKET_OPTIONAL_MEMBER_COUNT; }
   /// String representation of the histogram type JSON_FLEX.
   static constexpr const char *json_flex_str() { return "json-flex"; }
   /// Minimum frequency encountered in the bucket. Any value not found should have lower frequency
@@ -309,5 +248,6 @@ class Json_flex : public Histogram {
 
 }  // namespace histograms
 
-#undef JSON_BUCKET_MEMBER_COUNT
+#undef JSON_BUCKET_TOTAL_MEMBER_COUNT
+#undef JSON_BUCKET_OPTIONAL_MEMBER_COUNT
 #endif

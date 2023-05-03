@@ -188,11 +188,12 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       return true;
     }
     const Json_array *bucket = down_cast<const Json_array *>(bucket_dom);
-    if (bucket->size() != json_bucket_member_count()) {
+    const size_t allowed_size_all = json_bucket_total_member_count();
+    const size_t allowed_size_wo_opts = allowed_size_all - json_bucket_optional_member_count();
+    if (bucket->size() != allowed_size_all && bucket->size() != allowed_size_wo_opts) {
       context->report_node(bucket_dom, Message::JSON_WRONG_BUCKET_TYPE_N);
       return true;
     }
-
 
     // GET FIRST BUCKET ITEM: key_path
     const Json_dom *key_path_dom = (*bucket)[0];
@@ -207,13 +208,51 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     
 
     // GET THIRD BUCKET ITEM: null_values
-    const Json_dom *null_values_dom = (*bucket)[1];
+    const Json_dom *null_values_dom = (*bucket)[2];
     double null_values;
     if (extract_json_dom_value(null_values_dom, &null_values, context)) return true;
 
 
-    // STORE BUCKET IN HISTOGRAM
     JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values);
+    // Optional bucket items are also included
+    if (bucket->size() == allowed_size_all) {
+      // GET FOURTH BUCKET ITEM: min_val
+      number min_value;
+      const Json_dom *min_val_dom = (*bucket)[3];
+      if (min_val_dom->json_type() == enum_json_type::J_DOUBLE) {
+        if (extract_json_dom_value(min_val_dom, &min_value._float, context)) return true;
+      } else if (min_val_dom->json_type() == enum_json_type::J_INT ||
+                 min_val_dom->json_type() == enum_json_type::J_UINT) {
+        if (extract_json_dom_value(min_val_dom, &min_value._int, context)) return true;
+      }
+      else {
+        context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
+        return true;
+      }
+      
+      
+      // GET FIFTH BUCKET ITEM: max_val
+      number max_value;
+      const Json_dom *max_val_dom = (*bucket)[4];
+      if (max_val_dom->json_type() == enum_json_type::J_DOUBLE) {
+        if (extract_json_dom_value(max_val_dom, &max_value._float, context)) return true;
+      } else if (max_val_dom->json_type() == enum_json_type::J_INT ||
+                 max_val_dom->json_type() == enum_json_type::J_UINT) {
+        if (extract_json_dom_value(max_val_dom, &max_value._int, context)) return true;
+      }
+      else {
+        context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
+        return true;
+      }
+
+
+      hist_bucket.min_val = min_value;
+      hist_bucket.max_val = max_value;
+
+      // TODO: look at final type string in the key path to figure out type of min and max value
+    }
+
+    // STORE BUCKET IN HISTOGRAM
     assert(m_buckets.capacity() > m_buckets.size());
     m_buckets.push_back(hist_bucket);
   }
@@ -228,12 +267,39 @@ Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {
   return json_flex;
 }
 
+template<typename T>
+double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_path, enum_operator op, T value) {
+  switch(op) {
+    case enum_operator::EQUALS_TO: {
+      return jflex->get_equal_to_selectivity(arg_path, value);
+    }
+    case enum_operator::LESS_THAN: {
+      return jflex->get_less_than_selectivity(arg_path, value);
+    }
+    case enum_operator::GREATER_THAN: {
+      return jflex->get_greater_than_selectivity(arg_path, value);
+    }
+    default: assert(false);
+  }
+}
 
-// Separators used when building the histogram query string
-const std::string TYPE_SEP = "_";
-const std::string KEY_SEP = ".";
+double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_path, enum_operator op) {
+  switch(op) {
+    case enum_operator::EQUALS_TO: {
+      return jflex->get_equal_to_selectivity(arg_path);
+    }
+    case enum_operator::LESS_THAN: {
+      return jflex->get_less_than_selectivity(arg_path);
+    }
+    case enum_operator::GREATER_THAN: {
+      return jflex->get_greater_than_selectivity(arg_path);
+    }
+    default: assert(false);
+  }
+}
 
-bool Json_flex::build_histogram_query_string(Item_func *func, Item *comparand, std::string &builder) {
+// TODO: Handle bools as well
+bool Json_flex::get_selectivity(Item_func *func, Item *comparand, enum_operator op, double *selectivity) const {
   // Currently, we'll handle the JSON_EXTRACT function.
   // It takes a json_doc (simplifying assumption: a column), and a string path
 
@@ -256,14 +322,62 @@ bool Json_flex::build_histogram_query_string(Item_func *func, Item *comparand, s
   else if (innermost_func->func_name() == std::string("json_unquote")) path_idx = 0;
   else return true;
   // TODO: Support for JSON_MEMBEROF and JSON_CONTAINS will require rewriting this first part
-  
 
-  // Copy string value in function argument
+
+  // Build query path
   Item *json_path_arg = innermost_func->args[path_idx]->real_item();
+  std::string path_builder("");
+  if (
+    build_histogram_query_string(json_path_arg, comparand, json_unquote_called, path_builder)
+  ) return true;
+  const String arg_path = String(path_builder.c_str(), path_builder.length(), m_charset);
+
+
+  // If json_unquote was called, and the comparand is a const, 
+  // then we know that we have an actual value that we can lookup in specifically
+  // in the histogram data. Otherwise, we can only look up the generated query string.
+  bool comparand_is_const = comparand->const_item();
+  if (json_unquote_called && comparand_is_const) {
+    switch(comparand->type()) {
+      // TODO: Do we differentiate between doubles and floats??
+      case Item::Type::INT_ITEM: {
+        *selectivity = selectivity_getter_dispatch(this, arg_path, op, comparand->val_int());
+        break;
+      }
+      case Item::Type::REAL_ITEM: {
+        *selectivity = selectivity_getter_dispatch(this, arg_path, op, comparand->val_real());
+        break;
+      }
+      case Item::Type::STRING_ITEM: {
+        StringBuffer<MAX_FIELD_WIDTH> str_buf(comparand->collation.collation);
+        const String *str = comparand->val_str(&str_buf);
+        const String truncated = str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+        *selectivity = selectivity_getter_dispatch<const String&>(this, arg_path, op, truncated);
+        break;
+      }
+      case Item::Type::NULL_ITEM: {
+        // TODO: Handle = NULL
+        // Will we have to handle >, =<, ... here?
+        return true;
+      }
+      default: return true;
+    }
+  } else {
+    *selectivity = selectivity_getter_dispatch(this, arg_path, op);
+  }
+
+  return false;  
+}
+
+// Separators used when building the histogram query string
+const std::string TYPE_SEP = "_";
+const std::string KEY_SEP = ".";
+
+bool Json_flex::build_histogram_query_string(Item *json_path_arg, Item *comparand, bool arg_type_certain, std::string &builder) {
+  // Copy string value in function argument  
   StringBuffer<MAX_FIELD_WIDTH> str_buf(json_path_arg->collation.collation);
   std::string str = to_string(*json_path_arg->val_str(&str_buf));
 
-  
   // Parse the argument query string to build a string to query the histogram with
   // Example query string: docs[0].history.edits[5].datetime
   auto iterator_start = str.begin() + 1; // Skip the '$'
@@ -321,12 +435,9 @@ outer_loop:
   }
 
 
-  // Check that we're comparing against a constant value (?)
-  if (!comparand->const_item()) return true;
-
   // If the JSON_VALUE is not called (i.e., -> is used instead of ->>), we can't use the type of of the comparand
   // and will have to lookup the key path for all terminal types. 
-  if (json_unquote_called) {
+  if (arg_type_certain) {
     // TODO: we can access the operands value here by using comparand->val_X(), where X is int, double, string
     switch(comparand->type()) {
       // TODO: Do we differentiate between doubles and floats??
@@ -345,37 +456,92 @@ outer_loop:
       // TODO: Do we handle json_memberof/json_contains arguments here?
       default: return true;
     }
-  }
+  } 
 
-  // Attempt to expand output buffer and copy built string into it
-  return false;  
+  return false;
 }
 
-double Json_flex::get_equal_to_selectivity(const String &value) const {
+std::optional<const JsonBucket *> Json_flex::find_bucket(const String &path) const {
   for (const JsonBucket *bucket = m_buckets.begin(); bucket != m_buckets.end(); bucket++) {
-    if (stringcmp(&value, &bucket->key_path) == 0) {
-      return bucket->frequency;
+    if (stringcmp(&path, &bucket->key_path) == 0) {
+      return bucket;
     }
+  }
+  return std::nullopt;
+}
+
+template<>
+double Json_flex::lookup_bucket(const String &path, const double cmp_val) const {
+  if (auto bucketOpt = find_bucket(path)) {
+    const JsonBucket *bucket = *bucketOpt;
+    if (bucket->min_val && bucket->max_val) {
+      if ((*bucket->min_val)._float > cmp_val || (*bucket->max_val)._float < cmp_val) {
+        return 0.0;
+      }
+    }
+    return bucket->frequency;
   }
   return min_frequency;
 }
 
-double Json_flex::get_less_than_selectivity(const String &value) const {
-  for (const JsonBucket *bucket = m_buckets.begin(); bucket != m_buckets.end(); bucket++) {
-    if (stringcmp(&value, &bucket->key_path) == 0) {
-      return bucket->frequency;
+template<>
+double Json_flex::lookup_bucket(const String &path, const longlong cmp_val) const {
+  if (auto bucketOpt = find_bucket(path)) {
+    const JsonBucket *bucket = *bucketOpt;
+    if (bucket->min_val && bucket->max_val) {
+      if ((*bucket->min_val)._int > cmp_val || (*bucket->max_val)._int < cmp_val) {
+        return 0.0;
+      }
     }
+    return bucket->frequency;
   }
   return min_frequency;
 }
 
-double Json_flex::get_greater_than_selectivity(const String &value) const {
-  for (const JsonBucket *bucket = m_buckets.begin(); bucket != m_buckets.end(); bucket++) {
-    if (stringcmp(&value, &bucket->key_path) == 0) {
-      return bucket->frequency;
-    }
+// template<>
+// double Json_flex::lookup_bucket(const String &path, const String &cmp_val) const {
+//   auto _ = cmp_val; // stop unused param warning
+//   return lookup_bucket(path);
+// }
+
+template<>
+double Json_flex::lookup_bucket(const String &path, String cmp_val) const {
+  auto _ = cmp_val; // stop unused param warning
+  return lookup_bucket(path);
+}
+
+double Json_flex::lookup_bucket(const String &path) const {
+  if (auto bucketOpt = find_bucket(path)) {
+    const JsonBucket *bucket = *bucketOpt;
+    return bucket->frequency;
   }
   return min_frequency;
+}
+
+template<typename T>
+double Json_flex::get_equal_to_selectivity(const String &path, T cmp_val) const {
+  return lookup_bucket(path, cmp_val);
+}
+template<typename T>
+double Json_flex::get_less_than_selectivity(const String &path, T cmp_val) const {
+  return lookup_bucket(path, cmp_val);
+}
+template<typename T>
+double Json_flex::get_greater_than_selectivity(const String &path, T cmp_val) const {
+  return lookup_bucket(path, cmp_val);
+}
+
+
+double Json_flex::get_equal_to_selectivity(const String &path) const {
+  return lookup_bucket(path);
+}
+
+double Json_flex::get_less_than_selectivity(const String &path) const {
+  return lookup_bucket(path);
+}
+
+double Json_flex::get_greater_than_selectivity(const String &path) const {
+  return lookup_bucket(path);
 }
 
 }  // namespace histograms
