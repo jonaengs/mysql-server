@@ -69,6 +69,17 @@ Json_flex *Json_flex::create(MEM_ROOT *mem_root,
   return json_flex;
 }
 
+String *dup_string(MEM_ROOT *mem_root, String original) {
+  char *string_data = original.dup(mem_root);
+
+  // Assume (for now) that OOM won't happen
+  // if (string_data == nullptr) assert(false);
+
+  String string_dup = new(mem_root) String(string_data, original.length(), original.charset());
+
+  return &string_dup;
+}
+
 Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
                              bool *error)
     : Histogram(mem_root, other, error), m_buckets(mem_root) {
@@ -87,17 +98,23 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
       assert(false); /* purecov: deadcode */
       return;        // OOM
     }
-
-    String string_dup(string_data, bucket.key_path.length(),
+    String key_path_dup(string_data, bucket.key_path.length(),
                       bucket.key_path.charset());
 
-    // TODO: Remove the ternary operations. Likely unnecessary.
-    JsonBucket copy(string_dup, bucket.frequency, bucket.null_values,
-                    bucket.min_val.has_value() ? std::optional(*bucket.min_val) : std::nullopt, 
-                    bucket.max_val.has_value() ? std::optional(*bucket.max_val) : std::nullopt,
+
+    // Duplicate string values if there are any
+    maybe_number min_val_copy = bucket.min_val.has_value() ? std::optional(*bucket.min_val) : std::nullopt;
+    maybe_number max_val_copy = bucket.max_val.has_value() ? std::optional(*bucket.max_val) : std::nullopt;
+
+    bool vals_are_str = bucket.values_type == BucketValueType::STRING;
+    maybe_number min_val_opt = vals_are_str ? 
+        std::optional(dup_string(*(*bucket.min_val)._string)) : min_val_copy;
+    maybe_number max_val_opt = vals_are_str ?
+        std::optional(dup_string(*(*bucket.max_val)._string)) : max_val_copy;
+    JsonBucket copy(key_path_dup, bucket.frequency, bucket.null_values,
+                    min_val_opt, max_val_opt,
                     bucket.ndv.has_value() ? std::optional(*bucket.ndv) : std::nullopt,
-                    bucket.values_type
-                  );
+                    bucket.values_type);
 
     if (bucket.values_type != BucketValueType::UNKNOWN) {
       // If one of the optionals is included, the other should be as well
@@ -303,6 +320,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
         return true;
       }
+
       if (min_val_dom->json_type() == enum_json_type::J_DOUBLE) {
         if (extract_json_dom_value(min_val_dom, &(min_val._float), context)) return true;
         if (extract_json_dom_value(max_val_dom, &(max_val._float), context)) return true;
@@ -311,14 +329,24 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         if (extract_json_dom_value(min_val_dom, &min_val._int, context)) return true;
         if (extract_json_dom_value(max_val_dom, &max_val._int, context)) return true;
         values_type = BucketValueType::BOOL;
-      }
-      else if (min_val_dom->json_type() == enum_json_type::J_INT ||
+      } else if (min_val_dom->json_type() == enum_json_type::J_INT ||
                  min_val_dom->json_type() == enum_json_type::J_UINT) {
         if (extract_json_dom_value(min_val_dom, &min_val._int, context)) return true;
         if (extract_json_dom_value(max_val_dom, &max_val._int, context)) return true;
         values_type = BucketValueType::INT;
-      }
-      else {
+      } else if (min_val_dom->json_type() == enum_json_type::J_STRING) {
+        // NOTE: min/max val strings are also expected to be encoded
+        String min_val_str;
+        String max_val_str;
+        if (extract_json_dom_value(min_val_dom, &min_val_str, context)) return true;
+        if (extract_json_dom_value(max_val_dom, &max_val_str, context)) return true;
+        String min_val_truncd = min_val_str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+        String max_val_truncd = max_val_str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+        min_val._string = min_val_truncd;
+        max_val._string = max_val_truncd;
+
+        values_type = BucketValueType::STRING;
+      } else {
         context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
         return true;
       }

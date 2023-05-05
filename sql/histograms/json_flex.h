@@ -49,7 +49,9 @@ union json_primitive {
   double _float;
   longlong _int; // May lead to trouble when/if a longlong can't accommodate the same range as a json int (double) can.
   bool _bool;
+  String *_string;
 };
+// TODO: Rename
 typedef std::optional<json_primitive> maybe_number;
 
 
@@ -88,6 +90,15 @@ struct JsonBucket {
         min_val(min_val), max_val(max_val),
         ndv(ndv),
         values_type(values_type){}
+
+  // ~JsonBucket() {
+  //   // Free strings upon destruction. Don't know if this is strictly necessary when using a memory arena
+  //   // but the compiler becomes very angry if I don't.
+  //   if (values_type == BucketValueType::STRING) {
+  //     (*min_val)._string->~String();
+  //     (*max_val)._string->~String();
+  //   }
+  // }
 };
 
 class Json_flex : public Histogram {

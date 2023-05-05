@@ -17,6 +17,7 @@ ANALYZE TABLE t UPDATE HISTOGRAM ON j USING DATA
     '{"buckets": [
         ["base64:type254:MF9vYmoub2Jqc19hcnIuMF9udW0=", 0.345, 0.0, 0, 3, 4],
         ["base64:type254:MF9vYmoub2Jqc19hcnIuMV9udW0=", 0.456, 0.0, 0, 3, 4],
+        ["base64:type254:YmI=", 0.13, 0.0, "aaa", "bbbb", 3],
         ["base64:type254:YWE=", 0.131313, 0.0]
     ],
     "histogram-type": "json-flex",
@@ -64,5 +65,10 @@ SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity"
 --echo 
 --echo 
 EXPLAIN SELECT * FROM t WHERE t.j->"$aa" = 0;
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+--echo 
+--echo 
+EXPLAIN SELECT * FROM t WHERE t.j->>"$bb" = "aa";
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
