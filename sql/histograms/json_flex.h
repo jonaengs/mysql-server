@@ -44,13 +44,22 @@ enum class BucketValueType {
   BOOL,
 };
 
-// TODO: Rename to "json_primitve" or something
+
+// Basically a very crude copy of the MySQL String class, without constructors and destructors 
+// so that we can put it in our union without to resort to various workarounds.
+struct BucketString {
+  char *m_ptr;
+  size_t m_length;
+  const CHARSET_INFO *m_charset;
+};
+
 union json_primitive {
   double _float;
   longlong _int; // May lead to trouble when/if a longlong can't accommodate the same range as a json int (double) can.
   bool _bool;
+  BucketString _string;
 };
-typedef std::optional<json_primitive> maybe_number;
+typedef std::optional<json_primitive> maybe_primitive;
 
 
 // NOTE: When adding new members, take care to handle:
@@ -67,8 +76,8 @@ struct JsonBucket {
   const double null_values; // Frequency with which the key_path leads to null (distinct from not being present)
 
   // Optional members
-  const maybe_number min_val;
-  const maybe_number max_val;
+  const maybe_primitive min_val;
+  const maybe_primitive max_val;
   const std::optional<longlong> ndv;
 
   // Assigned at creation.
@@ -82,12 +91,19 @@ struct JsonBucket {
         values_type(BucketValueType::UNKNOWN){}
 
   JsonBucket(String key_path, double frequency, double null_values,
-             maybe_number min_val, maybe_number max_val, std::optional<longlong> ndv, BucketValueType values_type)
+             maybe_primitive min_val, maybe_primitive max_val, std::optional<longlong> ndv, BucketValueType values_type)
       : key_path(key_path), frequency(frequency),
         null_values(null_values),
         min_val(min_val), max_val(max_val),
         ndv(ndv),
         values_type(values_type){}
+
+    // ~JsonBucket() {
+    //   if (values_type == BucketValueType::STRING) {
+    //     if (min_val) my_free((*min_val)._string.m_ptr);
+    //     if (max_val) my_free((*max_val)._string.m_ptr);
+    //   }
+    // }
 };
 
 class Json_flex : public Histogram {
@@ -256,6 +272,7 @@ class Json_flex : public Histogram {
 
     @return     true on error, false otherwise
   */
+  static bool add_value_json_bucket(const BucketString &value, Json_array *json_bucket);
   static bool add_value_json_bucket(const String &value, Json_array *json_bucket);
   static bool add_value_json_bucket(const double &value, Json_array *json_bucket);
   static bool add_value_json_bucket(const longlong &value, Json_array *json_bucket);

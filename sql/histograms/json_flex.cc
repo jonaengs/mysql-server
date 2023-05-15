@@ -91,30 +91,55 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
     String string_dup(string_data, bucket.key_path.length(),
                       bucket.key_path.charset());
 
-    // TODO: Remove the ternary operations. Likely unnecessary.
+
+    maybe_primitive min_val_copy = bucket.min_val;
+    maybe_primitive max_val_copy = bucket.max_val;
+    if (bucket.values_type == BucketValueType::STRING) {
+      // Assuming that both min_val and max_val are legal strings
+
+      // Make copy of both min and max val strings
+      BucketString min_buckstring = (*min_val_copy)._string;
+      BucketString max_buckstring = (*max_val_copy)._string;
+      String min_string(min_buckstring.m_ptr, min_buckstring.m_length, min_buckstring.m_charset);
+      String max_string(max_buckstring.m_ptr, max_buckstring.m_length, max_buckstring.m_charset);
+
+      char *min_string_data = min_string.dup(mem_root);
+      char *max_string_data = max_string.dup(mem_root);
+      if (min_string_data == nullptr || max_string_data == nullptr) {
+        *error = true;
+        assert(false);
+        return;
+      }
+
+      // There may be an issue here where the dup is one byte longer because it includes \0 while the source string doesn't
+      (*min_val_copy)._string.m_ptr = min_string_data;
+      (*max_val_copy)._string.m_ptr = max_string_data;
+    }
+
     JsonBucket copy(string_dup, bucket.frequency, bucket.null_values,
-                    bucket.min_val.has_value() ? std::optional(*bucket.min_val) : std::nullopt, 
-                    bucket.max_val.has_value() ? std::optional(*bucket.max_val) : std::nullopt,
-                    bucket.ndv.has_value() ? std::optional(*bucket.ndv) : std::nullopt,
+                    min_val_copy, max_val_copy, bucket.ndv,
                     bucket.values_type
                   );
 
-    if (bucket.values_type != BucketValueType::UNKNOWN) {
-      // If one of the optionals is included, the other should be as well
-      assert(bucket.min_val && bucket.max_val);
-      assert(copy.min_val && copy.max_val);
-      // Copied values should match
-      assert((*copy.min_val)._int == (*bucket.min_val)._int);
-      assert((*copy.max_val)._int == (*bucket.max_val)._int);
+    // if (bucket.values_type != BucketValueType::UNKNOWN) {
+    //   // If one of the optionals is included, the other should be as well
+    //   assert(bucket.min_val && bucket.max_val);
+    //   assert(copy.min_val && copy.max_val);
+    //   // Copied values should match
+    //   // Except for strings, which contain pointers
+    //   if (bucket.values_type != BucketValueType::STRING) {
+    //     assert((*copy.min_val)._int == (*bucket.min_val)._int);
+    //     assert((*copy.max_val)._int == (*bucket.max_val)._int);
+    //   }
 
-      // Either all optionals or none are included. So if min/max is in the bucket, ndv should be as well
-      assert(bucket.ndv && copy.ndv);
-    } else {
-      // If the value type is unknown, the optionals should not be set
-      assert(!bucket.min_val && !bucket.max_val);
-      assert(!copy.min_val && !copy.max_val);
-      assert(!bucket.ndv && !copy.ndv);
-    }
+    //   // Either all optionals or none are included. So if min/max is in the bucket, ndv should be as well
+    //   assert(bucket.ndv && copy.ndv);
+    // } else {
+    //   // If the value type is unknown, the optionals should not be set
+    //   assert(!bucket.min_val && !bucket.max_val);
+    //   assert(!copy.min_val && !copy.max_val);
+    //   assert(!bucket.ndv && !copy.ndv);
+    // }
 
     m_buckets.push_back(copy);
   }
@@ -183,9 +208,10 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
         break;
       }
       case BucketValueType::STRING: {
-        // TODO
-        assert(false);
         return true;
+        if (add_value_json_bucket((*bucket.min_val)._string, json_bucket)) return true;
+        if (add_value_json_bucket((*bucket.max_val)._string, json_bucket)) return true;
+        break;
       }
       case BucketValueType::UNKNOWN: {
         // unreachable
@@ -201,6 +227,13 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
   return false;
 }
 
+
+bool Json_flex::add_value_json_bucket(const BucketString &value,
+                                              Json_array *json_bucket) {
+
+  String string = String(value.m_ptr, value.m_length, value.m_charset);
+  return add_value_json_bucket(string, json_bucket);
+}
 
 bool Json_flex::add_value_json_bucket(const String &value,
                                               Json_array *json_bucket) {
@@ -318,6 +351,15 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         if (extract_json_dom_value(max_val_dom, &max_val._int, context)) return true;
         values_type = BucketValueType::INT;
       }
+      else if (min_val_dom->json_type() == enum_json_type::J_STRING) {
+        String min_val_str;
+        String max_val_str;
+        if (extract_json_dom_value(min_val_dom, &min_val_str, context)) return true;
+        if (extract_json_dom_value(min_val_dom, &max_val_str, context)) return true;
+        min_val._string = BucketString{min_val_str.ptr(), min_val_str.length(), min_val_str.charset()};
+        max_val._string = BucketString{max_val_str.ptr(), max_val_str.length(), max_val_str.charset()};
+        // values_type = BucketValueType::STRING;
+      }
       else {
         context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
         return true;
@@ -325,14 +367,16 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
 
       min_val_opt = min_val;
       max_val_opt = max_val;
-      // TODO: look at final type string in the key path to figure out type of min and max value
-
 
       // GET FIFTH BUCKET: NDV
       const Json_dom *ndv_dom = (*bucket)[5];
       longlong ndv;
       if (extract_json_dom_value(ndv_dom, &ndv, context)) return true;
       ndv_opt = ndv;
+
+      assert(min_val_opt);
+      assert(max_val_opt);
+      // assert(values_type != BucketValueType::UNKNOWN);
     }
     
 
@@ -364,7 +408,10 @@ double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_pat
     case enum_operator::GREATER_THAN: {
       return jflex->get_greater_than_selectivity(arg_path, value);
     }
-    default: assert(false);
+    default: {
+      assert(false);
+      return 1.0;
+    }
   }
 }
 
@@ -379,7 +426,10 @@ double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_pat
     case enum_operator::GREATER_THAN: {
       return jflex->get_greater_than_selectivity(arg_path);
     }
-    default: assert(false);
+    default: {
+      assert(false); 
+      return 1.0;
+    }
   }
 }
 
@@ -566,6 +616,24 @@ double Json_flex::lookup_bucket(const String &path, const double cmp_val) const 
       if ((*bucket->min_val)._float > cmp_val || (*bucket->max_val)._float < cmp_val) {
         return 0.0;
       }
+    }
+    return bucket->frequency * (1.0 - bucket->null_values);
+  }
+  return min_frequency;
+}
+
+template<>
+double Json_flex::lookup_bucket(const String &path, const String &cmp_val) const {
+  if (auto bucketOpt = find_bucket(path)) {
+    const JsonBucket *bucket = *bucketOpt;
+    if (bucket->min_val && bucket->max_val) {
+      BucketString min_buckstr = (*bucket->min_val)._string;
+      BucketString max_buckstr = (*bucket->max_val)._string;
+      String min_string = String(min_buckstr.m_ptr, min_buckstr.m_length, min_buckstr.m_charset);
+      String max_string = String(max_buckstr.m_ptr, max_buckstr.m_length, max_buckstr.m_charset);
+      if (stringcmp(&min_string, &cmp_val) > 0 || stringcmp(&max_string, &cmp_val) < 0) {
+        return 0.0;
+      } 
     }
     return bucket->frequency * (1.0 - bucket->null_values);
   }

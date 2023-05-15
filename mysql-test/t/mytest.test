@@ -17,7 +17,7 @@ ANALYZE TABLE t UPDATE HISTOGRAM ON j USING DATA
     '{"buckets": [
         ["base64:type254:MF9vYmoub2Jqc19hcnIuMF9udW0=", 0.345, 0.0, 0, 3, 4],
         ["base64:type254:MF9vYmoub2Jqc19hcnIuMV9udW0=", 0.456, 0.0, 0, 3, 4],
-        ["base64:type254:YWE=", 0.131313, 0.0]
+        ["base64:type254:YWE=", 0.131313, 0.0, "base64:type254:YWE=", "base64:type254:YWE=", 1]
     ],
     "histogram-type": "json-flex",
     "data-type": "json",
