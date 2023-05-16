@@ -17,7 +17,7 @@ ANALYZE TABLE t UPDATE HISTOGRAM ON j USING DATA
     '{"buckets": [
         ["base64:type254:MF9vYmoub2Jqc19hcnIuMF9udW0=", 0.345, 0.0, 0, 3, 4],
         ["base64:type254:MF9vYmoub2Jqc19hcnIuMV9udW0=", 0.456, 0.0, 0, 3, 4],
-        ["base64:type254:YWE=", 0.131313, 0.0, "base64:type254:YWE=", "base64:type254:YWE=", 1]
+        ["base64:type254:YWE=", 0.131313, 0.0, "base64:type254:YmI=", "base64:type254:YmI=", 1]
     ],
     "histogram-type": "json-flex",
     "data-type": "json",
@@ -28,7 +28,7 @@ ANALYZE TABLE t UPDATE HISTOGRAM ON j USING DATA
     "sampling-rate": 1.0}';
 
 --echo # SHOW HISTOGRAM
-# SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'j';
+SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'j';
 --echo # QUERY t
 # SELECT * FROM t;
 SET OPTIMIZER_TRACE = "enabled=on";
@@ -65,4 +65,10 @@ SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity"
 --echo 
 EXPLAIN SELECT * FROM t WHERE t.j->"$aa" = 0;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-
+--echo 
+--echo 
+--echo 
+EXPLAIN SELECT * FROM t WHERE t.j->"$aa" = "ccc";
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+--echo 

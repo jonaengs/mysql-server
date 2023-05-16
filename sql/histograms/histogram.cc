@@ -644,11 +644,7 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
   } else if (histogram_type->value() == Histogram::json_flex_str()) {
     // Json_flex histogram
     if (data_type->value() == "json") {
-      histogram = Json_flex::create(mem_root, schema_name, table_name,
-                                              column_name, Value_map_type::STRING);
-    } else if (data_type->value() == "string") {
-      histogram = Json_flex::create(mem_root, schema_name, table_name,
-                                              column_name, Value_map_type::STRING);
+      histogram = Json_flex::create(mem_root, schema_name, table_name, column_name);
     } else {
       context->report_node(data_type_dom, Message::JSON_UNSUPPORTED_DATA_TYPE);
       return nullptr;

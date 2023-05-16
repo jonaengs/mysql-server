@@ -33,9 +33,6 @@ namespace histograms {
   Likewise, the Json_flex class does not have a public copy constructor, but
   instead implements a clone() method that returns nullptr in case of failure.
 */
-template <class T>
-class Value_map;
-
 enum class BucketValueType {
   UNKNOWN,
   INT,
@@ -51,6 +48,10 @@ struct BucketString {
   char *m_ptr;
   size_t m_length;
   const CHARSET_INFO *m_charset;
+
+  String to_string() const {
+    return String(m_ptr, m_length, m_charset);
+  }
 };
 
 union json_primitive {
@@ -120,15 +121,13 @@ class Json_flex : public Histogram {
     @param db_name  name of the database this histogram represents
     @param tbl_name name of the table this histogram represents
     @param col_name name of the column this histogram represents
-    @param data_type the type of data that this histogram contains
 
     @return A pointer to a Json_flex histogram on success. Returns nullptr on
     error.
   */
   static Json_flex *create(MEM_ROOT *mem_root, const std::string &db_name,
                               const std::string &tbl_name,
-                              const std::string &col_name,
-                              Value_map_type data_type);
+                              const std::string &col_name);
 
   /**
     Make a clone of this histogram on a MEM_ROOT.
@@ -243,12 +242,11 @@ class Json_flex : public Histogram {
     @param db_name   name of the database this histogram represents
     @param tbl_name  name of the table this histogram represents
     @param col_name  name of the column this histogram represents
-    @param data_type the type of data that this histogram contains
     @param[out] error is set to true if an error occurs
   */
   Json_flex(MEM_ROOT *mem_root, const std::string &db_name,
             const std::string &tbl_name, const std::string &col_name,
-            Value_map_type data_type, bool *error);
+            bool *error);
 
   /**
     Json_flex copy-constructor

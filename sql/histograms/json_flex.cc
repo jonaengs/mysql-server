@@ -50,21 +50,20 @@ namespace histograms {
 // Private constructor
 Json_flex::Json_flex(MEM_ROOT *mem_root, const std::string &db_name,
                         const std::string &tbl_name,
-                        const std::string &col_name, Value_map_type data_type,
+                        const std::string &col_name,
                         bool *error)
     : Histogram(mem_root, db_name, tbl_name, col_name,
-                enum_histogram_type::JSON_FLEX, data_type, error),
+                enum_histogram_type::JSON_FLEX, Value_map_type::JSON, error),
       m_buckets(mem_root) {}
 
 // Public factory method
 Json_flex *Json_flex::create(MEM_ROOT *mem_root,
                                    const std::string &db_name,
                                    const std::string &tbl_name,
-                                   const std::string &col_name,
-                                   Value_map_type data_type) {
+                                   const std::string &col_name) {
   bool error = false;
   Json_flex *json_flex = new (mem_root)
-      Json_flex(mem_root, db_name, tbl_name, col_name, data_type, &error);
+      Json_flex(mem_root, db_name, tbl_name, col_name, &error);
   if (error) return nullptr;
   return json_flex;
 }
@@ -102,9 +101,9 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
       BucketString max_buckstring = (*max_val_copy)._string;
       String min_string(min_buckstring.m_ptr, min_buckstring.m_length, min_buckstring.m_charset);
       String max_string(max_buckstring.m_ptr, max_buckstring.m_length, max_buckstring.m_charset);
-
       char *min_string_data = min_string.dup(mem_root);
       char *max_string_data = max_string.dup(mem_root);
+
       if (min_string_data == nullptr || max_string_data == nullptr) {
         *error = true;
         assert(false);
@@ -114,6 +113,20 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
       // There may be an issue here where the dup is one byte longer because it includes \0 while the source string doesn't
       (*min_val_copy)._string.m_ptr = min_string_data;
       (*max_val_copy)._string.m_ptr = max_string_data;
+
+      // Sanity checks
+      {
+        // Check that pointers are not the same
+        assert((*min_val_copy)._string.m_ptr != (*bucket.min_val)._string.m_ptr);
+        assert((*max_val_copy)._string.m_ptr != (*bucket.max_val)._string.m_ptr);
+        // Check that string values are the same
+        min_string = String(min_string_data, (*min_val_copy)._string.m_length, (*min_val_copy)._string.m_charset);
+        max_string = String(max_string_data, (*max_val_copy)._string.m_length, (*max_val_copy)._string.m_charset);
+        String original_min_as_string = (*bucket.min_val)._string.to_string();
+        String original_max_as_string = (*bucket.max_val)._string.to_string();
+        assert(stringcmp(&min_string, &original_min_as_string) == 0);
+        assert(stringcmp(&max_string, &original_max_as_string) == 0);
+      }
     }
 
     JsonBucket copy(string_dup, bucket.frequency, bucket.null_values,
@@ -121,25 +134,25 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
                     bucket.values_type
                   );
 
-    // if (bucket.values_type != BucketValueType::UNKNOWN) {
-    //   // If one of the optionals is included, the other should be as well
-    //   assert(bucket.min_val && bucket.max_val);
-    //   assert(copy.min_val && copy.max_val);
-    //   // Copied values should match
-    //   // Except for strings, which contain pointers
-    //   if (bucket.values_type != BucketValueType::STRING) {
-    //     assert((*copy.min_val)._int == (*bucket.min_val)._int);
-    //     assert((*copy.max_val)._int == (*bucket.max_val)._int);
-    //   }
+    if (bucket.values_type != BucketValueType::UNKNOWN) {
+      // If one of the optionals is included, the other should be as well
+      assert(bucket.min_val && bucket.max_val);
+      assert(copy.min_val && copy.max_val);
+      // Copied values should match
+      // Except for strings, which contain pointers
+      if (bucket.values_type != BucketValueType::STRING) {
+        assert((*copy.min_val)._int == (*bucket.min_val)._int);
+        assert((*copy.max_val)._int == (*bucket.max_val)._int);
+      }
 
-    //   // Either all optionals or none are included. So if min/max is in the bucket, ndv should be as well
-    //   assert(bucket.ndv && copy.ndv);
-    // } else {
-    //   // If the value type is unknown, the optionals should not be set
-    //   assert(!bucket.min_val && !bucket.max_val);
-    //   assert(!copy.min_val && !copy.max_val);
-    //   assert(!bucket.ndv && !copy.ndv);
-    // }
+      // Either all optionals or none are included. So if min/max is in the bucket, ndv should be as well
+      assert(bucket.ndv && copy.ndv);
+    } else {
+      // If the value type is unknown, the optionals should not be set
+      assert(!bucket.min_val && !bucket.max_val);
+      assert(!copy.min_val && !copy.max_val);
+      assert(!bucket.ndv && !copy.ndv);
+    }
 
     m_buckets.push_back(copy);
   }
@@ -173,15 +186,27 @@ bool Json_flex::histogram_to_json(Json_object *json_object) const {
   return false;
 }
 
+std::string s1("Test1");
+std::string s2("ABCDEF");
+
 bool Json_flex::create_json_bucket(const JsonBucket &bucket,
                                       Json_array *json_bucket) {
+
   // Key path
+  // if (bucket.values_type == BucketValueType::STRING) {
+  //   if (add_value_json_bucket((*bucket.max_val)._string, json_bucket)) 
+  //     return true;
+  // } else {
+  //   if (add_value_json_bucket(bucket.key_path, json_bucket))
+  //     return true;
+  // }
   if (add_value_json_bucket(bucket.key_path, json_bucket))
     return true;
 
   // frequency
   if (add_value_json_bucket(bucket.frequency, json_bucket))
     return true;
+
 
   // null_values
   if (add_value_json_bucket(bucket.null_values, json_bucket))
@@ -208,9 +233,18 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
         break;
       }
       case BucketValueType::STRING: {
-        return true;
-        if (add_value_json_bucket((*bucket.min_val)._string, json_bucket)) return true;
-        if (add_value_json_bucket((*bucket.max_val)._string, json_bucket)) return true;
+        // String string_1(s1.c_str(), s1.length(), bucket.key_path.charset());
+        // String string_2(s2.c_str(), s2.length(), bucket.key_path.charset());
+        // if (add_value_json_bucket(string_1, json_bucket)) return true;
+        // if (add_value_json_bucket(string_2, json_bucket)) return true;
+        if (add_value_json_bucket((longlong) 0, json_bucket)) return true;
+        if (add_value_json_bucket((longlong) 0, json_bucket)) return true;
+        // if (add_value_json_bucket(bucket.key_path, json_bucket)) return true;
+        // if (add_value_json_bucket(bucket.key_path, json_bucket)) return true;
+        // if (add_value_json_bucket(bucket.key_path, json_bucket)) return true;
+        // if (add_value_json_bucket((*bucket.min_val)._string, json_bucket)) return true;
+        // if (add_value_json_bucket((*bucket.max_val)._string, json_bucket)) return true;
+        
         break;
       }
       case BucketValueType::UNKNOWN: {
@@ -223,6 +257,7 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
     // Add NDV
     if (add_value_json_bucket(*bucket.ndv, json_bucket)) return true;
   }
+
   
   return false;
 }
@@ -231,8 +266,9 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
 bool Json_flex::add_value_json_bucket(const BucketString &value,
                                               Json_array *json_bucket) {
 
-  String string = String(value.m_ptr, value.m_length, value.m_charset);
-  return add_value_json_bucket(string, json_bucket);
+  const Json_opaque json_value(enum_field_types::MYSQL_TYPE_STRING, value.m_ptr,
+                               value.m_length);
+  return json_bucket->append_clone(&json_value);
 }
 
 bool Json_flex::add_value_json_bucket(const String &value,
@@ -358,7 +394,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         if (extract_json_dom_value(min_val_dom, &max_val_str, context)) return true;
         min_val._string = BucketString{min_val_str.ptr(), min_val_str.length(), min_val_str.charset()};
         max_val._string = BucketString{max_val_str.ptr(), max_val_str.length(), max_val_str.charset()};
-        // values_type = BucketValueType::STRING;
+        values_type = BucketValueType::STRING;
       }
       else {
         context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
@@ -368,14 +404,17 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       min_val_opt = min_val;
       max_val_opt = max_val;
 
+
       // GET FIFTH BUCKET: NDV
       const Json_dom *ndv_dom = (*bucket)[5];
       longlong ndv;
       if (extract_json_dom_value(ndv_dom, &ndv, context)) return true;
       ndv_opt = ndv;
 
+
       assert(min_val_opt);
       assert(max_val_opt);
+      // TODO: Uncomment this
       // assert(values_type != BucketValueType::UNKNOWN);
     }
     
@@ -392,6 +431,7 @@ Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {
   DBUG_EXECUTE_IF("fail_histogram_clone", return nullptr;);
   bool error = false;
   Histogram *json_flex = new (mem_root) Json_flex(mem_root, *this, &error);
+  static_cast<Json_flex *>(json_flex)->min_frequency = min_frequency;
   if (error) return nullptr;
   return json_flex;
 }
@@ -410,7 +450,7 @@ double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_pat
     }
     default: {
       assert(false);
-      return 1.0;
+      return 0.696969;
     }
   }
 }
@@ -428,7 +468,7 @@ double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_pat
     }
     default: {
       assert(false); 
-      return 1.0;
+      return 0.696969;
     }
   }
 }
@@ -623,7 +663,7 @@ double Json_flex::lookup_bucket(const String &path, const double cmp_val) const 
 }
 
 template<>
-double Json_flex::lookup_bucket(const String &path, const String &cmp_val) const {
+double Json_flex::lookup_bucket(const String &path, String cmp_val) const {
   if (auto bucketOpt = find_bucket(path)) {
     const JsonBucket *bucket = *bucketOpt;
     if (bucket->min_val && bucket->max_val) {
@@ -654,12 +694,6 @@ double Json_flex::lookup_bucket(const String &path, const longlong cmp_val) cons
   return min_frequency;
 }
 
-template<>
-double Json_flex::lookup_bucket(const String &path, String cmp_val) const {
-  auto _ = cmp_val; // stop unused param warning
-  return lookup_bucket(path);
-}
-
 double Json_flex::lookup_bucket(const String &path) const {
   if (auto bucketOpt = find_bucket(path)) {
     const JsonBucket *bucket = *bucketOpt;
@@ -671,37 +705,47 @@ double Json_flex::lookup_bucket(const String &path) const {
 template<typename T>
 double Json_flex::get_equal_to_selectivity(const String &path, T cmp_val) const {
   double base_selectivity = lookup_bucket(path, cmp_val);
-  auto bucket = find_bucket(path);
-  if (bucket && (*bucket)->ndv) {
-    return base_selectivity / *(*bucket)->ndv;
-  }
-  return base_selectivity * 0.1;
+  return base_selectivity;
+  
+  // auto bucket = find_bucket(path);
+  // if (bucket && (*bucket)->ndv) {
+  //   return base_selectivity / *(*bucket)->ndv;
+  // } else {
+  //   return base_selectivity * 0.1;
+  // }
 }
 
 template<typename T>
 double Json_flex::get_less_than_selectivity(const String &path, T cmp_val) const {
-  return lookup_bucket(path, cmp_val) * 0.3;
+  return lookup_bucket(path, cmp_val);
+  // return lookup_bucket(path, cmp_val) * 0.3;
 }
 template<typename T>
 double Json_flex::get_greater_than_selectivity(const String &path, T cmp_val) const {
-  return lookup_bucket(path, cmp_val) * 0.3;
+  return lookup_bucket(path, cmp_val);
+  // return lookup_bucket(path, cmp_val) * 0.3;
 }
 
 double Json_flex::get_equal_to_selectivity(const String &path) const {
   double base_selectivity = lookup_bucket(path);
-  auto bucket = find_bucket(path);
-  if (bucket && (*bucket)->ndv) {
-    return base_selectivity / *(*bucket)->ndv;
-  }
-  return base_selectivity * 0.1;
+  return base_selectivity;
+  
+  // auto bucket = find_bucket(path);
+  // if (bucket && (*bucket)->ndv) {
+  //   return base_selectivity / *(*bucket)->ndv;
+  // } else {
+  //   return base_selectivity * 0.1;
+  // }
 }
 
 double Json_flex::get_less_than_selectivity(const String &path) const {
-  return lookup_bucket(path) * 0.3;
+  return lookup_bucket(path);
+  // return lookup_bucket(path) * 0.3;
 }
 
 double Json_flex::get_greater_than_selectivity(const String &path) const {
-  return lookup_bucket(path) * 0.3;
+  return lookup_bucket(path);
+  // return lookup_bucket(path) * 0.3;
 }
 
 }  // namespace histograms
