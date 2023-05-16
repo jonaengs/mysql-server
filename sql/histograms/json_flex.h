@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <string>  // std::string
+#include <any>
 
 #include "my_inttypes.h"
 #include "mysql_time.h"
@@ -41,7 +42,6 @@ enum class BucketValueType {
   BOOL,
 };
 
-
 // Basically a very crude copy of the MySQL String class, without constructors and destructors 
 // so that we can put it in our union without to resort to various workarounds.
 struct BucketString {
@@ -67,6 +67,46 @@ union json_primitive {
 typedef std::optional<json_primitive> maybe_primitive;
 
 
+// Histogram inside a Json_flex histogram's bucket
+// Allowed types are the same as in json_primitive. Type is indicated by 
+// Apologies for the terrible name
+template<typename T> 
+struct JsonGram {
+  // TODO: Rename this to HistType (or something like that) to avoid confusion with BucketValueType
+  enum class BucketType {
+    SINGLETON, EQUI_HEIGHT,
+  };
+  struct SingleBucket {
+    T value;
+    double frequency; // As a fraction of the total frequency of the key_path
+  };
+  struct EquiBucket {
+    T upper_bound;
+    double frequency;
+    longlong ndv;
+  };
+  union Buckets {
+    Mem_root_array<SingleBucket> single_bucks;
+    Mem_root_array<EquiBucket> equi_bucks;
+  };
+
+  BucketType buckets_type;
+  Buckets m_buckets;
+
+  static JsonGram<T>* create(MEM_ROOT *mem_root, BucketType buckets_type);
+
+  static constexpr const char *singlebucket_str() { return "singleton"; }
+  static constexpr const char *equibucket_str() { return "equi-height"; }
+};
+
+// union anygram {
+//   JsonGram<double> *fgram;
+//   JsonGram<longlong> *igram;
+//   JsonGram<bool> *bgram; 
+//   JsonGram<BucketString> *sgram;
+// };
+
+
 // NOTE: When adding new members, take care to handle:
 // * Copy constructor
 // * histogram_to_json
@@ -84,6 +124,7 @@ struct JsonBucket {
   const maybe_primitive min_val;
   const maybe_primitive max_val;
   const std::optional<longlong> ndv;
+  JsonGram<std::any> *histogram;
 
   // Assigned at creation.
   const BucketValueType values_type;
@@ -92,7 +133,7 @@ struct JsonBucket {
       : key_path(key_path), frequency(frequency),
         null_values(null_values),
         min_val(std::nullopt), max_val(std::nullopt),
-        ndv(std::nullopt),
+        ndv(std::nullopt), histogram(nullptr),
         values_type(BucketValueType::UNKNOWN){}
 
   JsonBucket(String key_path, double frequency, double null_values,
@@ -100,7 +141,7 @@ struct JsonBucket {
       : key_path(key_path), frequency(frequency),
         null_values(null_values),
         min_val(min_val), max_val(max_val),
-        ndv(ndv),
+        ndv(ndv), histogram(nullptr),
         values_type(values_type){}
 
     // ~JsonBucket() {

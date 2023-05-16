@@ -68,6 +68,16 @@ Json_flex *Json_flex::create(MEM_ROOT *mem_root,
   return json_flex;
 }
 
+template<typename T>
+JsonGram<T> *JsonGram<T>::create(MEM_ROOT *mem_root,
+                                BucketType bucket_type) {
+  auto buckets = bucket_type == BucketType::SINGLETON ? 
+    Mem_root_array<SingleBucket>(mem_root) :
+    Mem_root_array<EquiBucket>(mem_root);
+
+  return new (mem_root) JsonGram<T>{bucket_type, buckets};
+}
+
 Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
                              bool *error)
     : Histogram(mem_root, other, error), m_buckets(mem_root) {
@@ -120,6 +130,10 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
         assert(stringcmp(&min_string, &original_min_as_string) == 0);
         assert(stringcmp(&max_string, &original_max_as_string) == 0);
       }
+    }
+
+    if (bucket.histogram) {
+      // TODO: Duplicate histogram data
     }
 
     JsonBucket copy(string_dup, bucket.frequency, bucket.null_values,
@@ -230,7 +244,12 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
     }
     
     // Add NDV
-    if (add_value_json_bucket(*bucket.ndv, json_bucket)) return true;
+    if (bucket.ndv) {
+      if (add_value_json_bucket(*bucket.ndv, json_bucket)) return true;
+      if (bucket.histogram) {
+        // TODO
+      }
+    }
   }
 
   
@@ -305,10 +324,9 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     }
     
     const Json_array *bucket = down_cast<const Json_array *>(bucket_dom);
-    const size_t allowed_size_all = json_bucket_total_member_count();
-    const size_t allowed_size_wo_opts = allowed_size_all - json_bucket_optional_member_count();
+    const size_t allowed_size_wo_opts = json_bucket_total_member_count() - json_bucket_optional_member_count();
     // Either all or none of the optional values must be provided
-    if (bucket->size() != allowed_size_all && bucket->size() != allowed_size_wo_opts) {
+    if (bucket->size() < allowed_size_wo_opts) {
       context->report_node(bucket_dom, Message::JSON_WRONG_BUCKET_TYPE_N);
       return true;
     }
@@ -336,8 +354,9 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     std::optional<json_primitive> max_val_opt;
     std::optional<longlong> ndv_opt;
     BucketValueType values_type = BucketValueType::UNKNOWN;
-    if (bucket->size() == allowed_size_all) {
+    if (bucket->size() >= allowed_size_wo_opts + 2) {
       // GET FOURTH BUCKET ITEM: min_val
+      // GET FIFTH BUCKET ITEM:  max_val
       const Json_dom *min_val_dom = (*bucket)[3];
       const Json_dom *max_val_dom = (*bucket)[4];
       json_primitive min_val;
@@ -378,21 +397,78 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         return true;
       }
 
+
       min_val_opt = min_val;
       max_val_opt = max_val;
 
+      assert(min_val_opt);
+      assert(max_val_opt);
+      assert(values_type != BucketValueType::UNKNOWN);
+    }
 
-      // GET FIFTH BUCKET: NDV
+    if (bucket->size() >= allowed_size_wo_opts + 3) {
+      // GET SIXTH BUCKET: NDV
       const Json_dom *ndv_dom = (*bucket)[5];
       longlong ndv;
       if (extract_json_dom_value(ndv_dom, &ndv, context)) return true;
       ndv_opt = ndv;
+    }
 
+    if (bucket->size() >= allowed_size_wo_opts + 4) {
+      // GET SEVENTH BUCKET: JsonGram
+      assert(values_type != BucketValueType::UNKNOWN);
 
-      assert(min_val_opt);
-      assert(max_val_opt);
-      // TODO: Uncomment this
-      // assert(values_type != BucketValueType::UNKNOWN);
+      // Unsafe casts abound :)
+      const Json_array *histogram_array = down_cast<const Json_array *>(buckets[6]);
+      assert(histogram_array->size() == 2);
+
+      // determine histogram type
+      const Json_dom *hist_type_dom = (*histogram_array)[0];
+      const Json_string *hist_type_str = down_cast<const Json_string *>(hist_type_dom);
+      assert(hist_type_str->value() == "singleton" || hist_type_str->value() == "equi-height");
+      auto bucket_type = hist_type_str->value() == "singleton" ? 
+        JsonGram::BucketType::SINGLETON : JsonGram::BucketType::EQUI_HEIGHT;
+
+      // Create JsonGram. T is determined from values_type
+      JsonGram<std::any> *json_gram = nullptr;
+      switch (values_type) {
+        case BucketValueType::INT: {
+          json_gram = JsonGram<longlong>::create(get_mem_root(), bucket_type);
+          break;
+        }
+        case BucketValueType::FLOAT: {
+          json_gram = JsonGram<double>::create(get_mem_root(), bucket_type);
+          break;
+        }
+        case BucketValueType::BOOL: {
+          json_gram = JsonGram<bool>::create(get_mem_root(), bucket_type);
+          break;
+        }
+        case BucketValueType::STRING: {
+          json_gram = JsonGram<BucketString>::create(get_mem_root(), bucket_type);
+          break;
+        }
+        case BucketValueType::UNKNOWN: {
+          assert(false);
+          context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
+          return true;
+        }
+      }
+
+      // determine number of buckets
+      const Json_array *buckets_array = down_cast<const Json_array *>(histogram_array[1]);
+      size_t num_buckets = buckets_array->size();
+
+      // reserve space for the buckets on mem_root
+      if (json_gram->buckets_type == BucketType::SINGLETON) {
+        json_gram->m_buckets.single_bucks.reserve(num_buckets);
+
+        // TODO: Copy over bucket contents
+      } else {
+        json_gram->m_buckets.equi_bucks.reserve(num_buckets);
+
+      }
+
     }
     
 
