@@ -97,22 +97,15 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
       // Assuming that both min_val and max_val are legal strings
 
       // Make copy of both min and max val strings
-      BucketString min_buckstring = (*min_val_copy)._string;
-      BucketString max_buckstring = (*max_val_copy)._string;
-      String min_string(min_buckstring.m_ptr, min_buckstring.m_length, min_buckstring.m_charset);
-      String max_string(max_buckstring.m_ptr, max_buckstring.m_length, max_buckstring.m_charset);
-      char *min_string_data = min_string.dup(mem_root);
-      char *max_string_data = max_string.dup(mem_root);
-
-      if (min_string_data == nullptr || max_string_data == nullptr) {
-        *error = true;
-        assert(false);
-        return;
-      }
+      String min_string = (*min_val_copy)._string.to_string();
+      String max_string = (*max_val_copy)._string.to_string();
+      // Assume no OOM
+      String min_string_duped = String(min_string.dup(mem_root), min_string.length(), min_string.charset());
+      String max_string_duped = String(max_string.dup(mem_root), max_string.length(), max_string.charset());
 
       // There may be an issue here where the dup is one byte longer because it includes \0 while the source string doesn't
-      (*min_val_copy)._string.m_ptr = min_string_data;
-      (*max_val_copy)._string.m_ptr = max_string_data;
+      (*min_val_copy)._string = BucketString::from_string(min_string_duped);
+      (*max_val_copy)._string = BucketString::from_string(max_string_duped);
 
       // Sanity checks
       {
@@ -120,8 +113,8 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
         assert((*min_val_copy)._string.m_ptr != (*bucket.min_val)._string.m_ptr);
         assert((*max_val_copy)._string.m_ptr != (*bucket.max_val)._string.m_ptr);
         // Check that string values are the same
-        min_string = String(min_string_data, (*min_val_copy)._string.m_length, (*min_val_copy)._string.m_charset);
-        max_string = String(max_string_data, (*max_val_copy)._string.m_length, (*max_val_copy)._string.m_charset);
+        min_string = String(min_string_duped.c_ptr(), (*min_val_copy)._string.m_length, (*min_val_copy)._string.m_charset);
+        max_string = String(max_string_duped.c_ptr(), (*max_val_copy)._string.m_length, (*max_val_copy)._string.m_charset);
         String original_min_as_string = (*bucket.min_val)._string.to_string();
         String original_max_as_string = (*bucket.max_val)._string.to_string();
         assert(stringcmp(&min_string, &original_min_as_string) == 0);
@@ -193,20 +186,12 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
                                       Json_array *json_bucket) {
 
   // Key path
-  // if (bucket.values_type == BucketValueType::STRING) {
-  //   if (add_value_json_bucket((*bucket.max_val)._string, json_bucket)) 
-  //     return true;
-  // } else {
-  //   if (add_value_json_bucket(bucket.key_path, json_bucket))
-  //     return true;
-  // }
   if (add_value_json_bucket(bucket.key_path, json_bucket))
     return true;
 
   // frequency
   if (add_value_json_bucket(bucket.frequency, json_bucket))
     return true;
-
 
   // null_values
   if (add_value_json_bucket(bucket.null_values, json_bucket))
@@ -233,18 +218,8 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
         break;
       }
       case BucketValueType::STRING: {
-        // String string_1(s1.c_str(), s1.length(), bucket.key_path.charset());
-        // String string_2(s2.c_str(), s2.length(), bucket.key_path.charset());
-        // if (add_value_json_bucket(string_1, json_bucket)) return true;
-        // if (add_value_json_bucket(string_2, json_bucket)) return true;
-        if (add_value_json_bucket((longlong) 0, json_bucket)) return true;
-        if (add_value_json_bucket((longlong) 0, json_bucket)) return true;
-        // if (add_value_json_bucket(bucket.key_path, json_bucket)) return true;
-        // if (add_value_json_bucket(bucket.key_path, json_bucket)) return true;
-        // if (add_value_json_bucket(bucket.key_path, json_bucket)) return true;
-        // if (add_value_json_bucket((*bucket.min_val)._string, json_bucket)) return true;
-        // if (add_value_json_bucket((*bucket.max_val)._string, json_bucket)) return true;
-        
+        if (add_value_json_bucket((*bucket.min_val)._string, json_bucket)) return true;
+        if (add_value_json_bucket((*bucket.max_val)._string, json_bucket)) return true;
         break;
       }
       case BucketValueType::UNKNOWN: {
@@ -387,16 +362,18 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         if (extract_json_dom_value(max_val_dom, &max_val._int, context)) return true;
         values_type = BucketValueType::INT;
       }
-      else if (min_val_dom->json_type() == enum_json_type::J_STRING) {
+      else if (min_val_dom->json_type() == enum_json_type::J_STRING ||
+               min_val_dom->json_type() == enum_json_type::J_OPAQUE) {
         String min_val_str;
         String max_val_str;
         if (extract_json_dom_value(min_val_dom, &min_val_str, context)) return true;
         if (extract_json_dom_value(min_val_dom, &max_val_str, context)) return true;
-        min_val._string = BucketString{min_val_str.ptr(), min_val_str.length(), min_val_str.charset()};
-        max_val._string = BucketString{max_val_str.ptr(), max_val_str.length(), max_val_str.charset()};
+        min_val._string = BucketString::from_string(min_val_str);
+        max_val._string = BucketString::from_string(max_val_str);
         values_type = BucketValueType::STRING;
       }
       else {
+        assert(false);
         context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
         return true;
       }
@@ -425,6 +402,16 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     m_buckets.push_back(hist_bucket);
   }
   return false;
+
+  /*
+  Potential verification checks:
+  * If NDV == 1, check that min_val == max_val. If NDV > 1, check that min_val != max_val
+  * If a histogram is present, check that NDV >= histogram_length
+  * Check that frequency, null_values/null_frequency in [0, 1]
+  * Check that each key_path has a valid format
+  * Check that string value lengths do not exceed MAX_FIELD_WITH
+  
+  */
 }
 
 Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {

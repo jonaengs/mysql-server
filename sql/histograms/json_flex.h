@@ -52,6 +52,10 @@ struct BucketString {
   String to_string() const {
     return String(m_ptr, m_length, m_charset);
   }
+
+  static BucketString from_string(String &str) {
+    return BucketString{str.ptr(), str.length(), str.charset()};
+  }
 };
 
 union json_primitive {
