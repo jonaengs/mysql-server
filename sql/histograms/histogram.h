@@ -376,6 +376,8 @@ class Histogram {
   */
   bool histogram_data_type_to_json(Json_object *json_object) const;
 
+
+public:
   /**
     Return the value that is contained in the JSON DOM object.
 
@@ -393,7 +395,7 @@ class Histogram {
   template <class T>
   bool extract_json_dom_value(const Json_dom *json_dom, T *out,
                               Error_context *context);
-
+protected:
   /**
     Populate the histogram with data from the provided JSON object. The base
     class also provides an implementation that subclasses must call in order

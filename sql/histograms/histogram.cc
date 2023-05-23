@@ -789,6 +789,19 @@ bool Histogram::extract_json_dom_value(const Json_dom *json_dom, double *out,
 }
 
 template <>
+bool Histogram::extract_json_dom_value(const Json_dom *json_dom, bool *out,
+                                       Error_context *context) {
+  if (json_dom->json_type() != enum_json_type::J_BOOLEAN) {
+    context->report_node(json_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
+    return true;
+  }
+
+  *out = down_cast<const Json_boolean *>(json_dom)->value();
+
+  return false;
+}
+
+template <>
 bool Histogram::extract_json_dom_value(const Json_dom *json_dom, String *out,
                                        Error_context *context) {
   assert(get_character_set() != nullptr);
@@ -878,6 +891,16 @@ bool Histogram::extract_json_dom_value(const Json_dom *json_dom, String *out,
   }
 
   out->set(value_dup_data, value_dup_length, get_character_set());
+  return false;
+}
+
+template <>
+bool Histogram::extract_json_dom_value(const Json_dom *json_dom, BucketString *out,
+                                       Error_context *context) {
+  String str_out;
+  if (extract_json_dom_value<String>(json_dom, &str_out, context)) return true;
+  *out = BucketString::from_string(str_out);
+  
   return false;
 }
 

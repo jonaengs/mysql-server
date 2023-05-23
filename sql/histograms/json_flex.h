@@ -23,6 +23,8 @@ struct MEM_ROOT;
 
 namespace histograms {
 
+class Json_flex;
+
 /**
   Json_flex histogram.
 
@@ -40,6 +42,9 @@ enum class BucketValueType {
   FLOAT,
   STRING,
   BOOL,
+};
+enum class JFlexHistType {
+  SINGLETON, EQUI_HEIGHT,
 };
 
 // Basically a very crude copy of the MySQL String class, without constructors and destructors 
@@ -72,10 +77,7 @@ typedef std::optional<json_primitive> maybe_primitive;
 // Apologies for the terrible name
 template<typename T> 
 struct JsonGram {
-  // TODO: Rename this to HistType (or something like that) to avoid confusion with BucketValueType
-  enum class BucketType {
-    SINGLETON, EQUI_HEIGHT,
-  };
+  // TODO: Rename this to JFlexHistType (or something like that) to avoid confusion with BucketValueType
   struct SingleBucket {
     T value;
     double frequency; // As a fraction of the total frequency of the key_path
@@ -90,10 +92,14 @@ struct JsonGram {
     Mem_root_array<EquiBucket> equi_bucks;
   };
 
-  BucketType buckets_type;
+  JFlexHistType buckets_type;
   Buckets m_buckets;
 
-  static JsonGram<T>* create(MEM_ROOT *mem_root, BucketType buckets_type);
+  static JsonGram<T>* create(MEM_ROOT *mem_root, JFlexHistType buckets_type);
+  static JsonGram<T>* create_singlegram(MEM_ROOT *mem_root);
+  static JsonGram<T>* create_equigram(MEM_ROOT *mem_root);
+  bool json_to_json_gram(const Json_array *buckets_array, Json_flex *parent, Error_context *context);
+  
 
   static constexpr const char *singlebucket_str() { return "singleton"; }
   static constexpr const char *equibucket_str() { return "equi-height"; }

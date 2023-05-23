@@ -30,6 +30,7 @@
 #include <algorithm>  // std::is_sorted
 #include <iterator>
 #include <new>
+#include <any>
 
 #include "field_types.h"  // enum_field_types
 #include "my_base.h"      // ha_rows
@@ -69,13 +70,32 @@ Json_flex *Json_flex::create(MEM_ROOT *mem_root,
 }
 
 template<typename T>
+JsonGram<T> *JsonGram<T>::create_singlegram(MEM_ROOT *mem_root) {
+    return new (mem_root) JsonGram<T>{JFlexHistType::SINGLETON, Mem_root_array<SingleBucket>(mem_root)};
+}
+template<typename T>
+JsonGram<T> *JsonGram<T>::create_equigram(MEM_ROOT *mem_root) {
+    return new (mem_root) JsonGram<T>{JFlexHistType::EQUI_HEIGHT, Mem_root_array<SingleBucket>(mem_root)};
+}
+template<typename T>
 JsonGram<T> *JsonGram<T>::create(MEM_ROOT *mem_root,
-                                BucketType bucket_type) {
-  auto buckets = bucket_type == BucketType::SINGLETON ? 
-    Mem_root_array<SingleBucket>(mem_root) :
-    Mem_root_array<EquiBucket>(mem_root);
+                                JFlexHistType bucket_type) {
+  if (bucket_type == JFlexHistType::SINGLETON) {
+    // JsonGram<T>::Buckets buckets = Mem_root_array<SingleBucket>(mem_root);
+    // return new (mem_root) JsonGram<T>{bucket_type, buckets};
+    return new (mem_root) JsonGram<T>{bucket_type, Mem_root_array<SingleBucket>(mem_root)};
+    // return new (mem_root) JsonGram<T>{bucket_type, static_cast<JsonGram<T>::Buckets>(Mem_root_array<SingleBucket>(mem_root))};
+    // return new (mem_root) JsonGram<T>{bucket_type, Mem_root_array<SingleBucket>(mem_root)};
+    // buckets.single_bucks = Mem_root_array<SingleBucket>(mem_root);
+  } else {
+    // auto buckets = Mem_root_array<EquiBucket>(mem_root);
+    // return new (mem_root) JsonGram<T>{bucket_type, mem_root};
+    return new (mem_root) JsonGram<T>{bucket_type, Mem_root_array<EquiBucket>(mem_root)};
+    // return new (mem_root) JsonGram<T>{bucket_type, static_cast<JsonGram<T>::Buckets>(Mem_root_array<EquiBucket>(mem_root))};
+    // buckets.equi_bucks = Mem_root_array<EquiBucket>(mem_root);
+  }
 
-  return new (mem_root) JsonGram<T>{bucket_type, buckets};
+  // return new (mem_root) JsonGram<T>{bucket_type, buckets};
 }
 
 Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
@@ -293,6 +313,70 @@ std::string Json_flex::histogram_type_to_str() const {
   return json_flex_str();
 }
 
+template<typename T>
+bool JsonGram<T>::json_to_json_gram(const Json_array *buckets_array, Json_flex *histogram, Error_context *context) {
+  // determine number of buckets
+  size_t num_buckets = buckets_array->size();
+
+  // reserve space for the buckets on mem_root
+  if (buckets_type == JFlexHistType::SINGLETON) {
+    m_buckets.single_bucks.reserve(num_buckets);
+  } else {
+    m_buckets.equi_bucks.reserve(num_buckets);
+  }
+
+  // Copy bucket contents into the JsonGram
+  // Loop over buckets, copying one value at a time
+  for (size_t i = 0; i < num_buckets; ++i) {
+    const Json_dom *bucket_dom = (*buckets_array)[i];
+    if (bucket_dom == nullptr) {
+      context->report_missing_attribute("aaaaaaa");
+      return true;
+    }
+    if (bucket_dom->json_type() != enum_json_type::J_ARRAY) {
+      context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
+      return true;
+    }
+    const Json_array *bucket = down_cast<const Json_array *>(bucket_dom);
+    if (buckets_type == JFlexHistType::SINGLETON) {
+      assert(bucket->size() == 2);
+    } else {
+      assert(bucket->size() == 3);
+    }
+    
+
+    const Json_dom *value_dom = (*bucket)[0];    
+    T value;
+    if (histogram->extract_json_dom_value(value_dom, &value, context)) return true;
+
+
+    const Json_dom *frequency_dom = (*bucket)[1];
+    double frequency;
+    if (histogram->extract_json_dom_value(frequency_dom, &frequency, context)) return true;
+
+          
+    if (buckets_type == JFlexHistType::SINGLETON) {
+      // Create bucket and add to array
+      SingleBucket single_bucket = SingleBucket{value, frequency};
+      assert(m_buckets.single_bucks.capacity() > m_buckets.single_bucks.size());
+      m_buckets.single_bucks.push_back(single_bucket);
+    } else {
+      // Extract third value only present in equi buckets
+      const Json_dom *ndv_dom = (*bucket)[2];
+      longlong ndv;
+      if (histogram->extract_json_dom_value(ndv_dom, &ndv, context)) return true;
+
+      // Create bucket and add to array
+      EquiBucket equi_bucket = EquiBucket{value, frequency, ndv};
+      assert(m_buckets.equi_bucks.capacity() > m_buckets.equi_bucks.size());
+      m_buckets.equi_bucks.push_back(equi_bucket);
+    }
+  }
+
+  return false;
+}
+
+
 bool Json_flex::json_to_histogram(const Json_object &json_object,
                                      Error_context *context) {
   if (Histogram::json_to_histogram(json_object, context)) return true;
@@ -418,8 +502,9 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       // GET SEVENTH BUCKET: JsonGram
       assert(values_type != BucketValueType::UNKNOWN);
 
-      // Unsafe casts abound :)
-      const Json_array *histogram_array = down_cast<const Json_array *>(buckets[6]);
+      // Missing safety checks inbound. Shield your eyes.
+      const Json_dom *histogram_array_dom = (*bucket)[6];
+      const Json_array *histogram_array = down_cast<const Json_array *>(histogram_array_dom);
       assert(histogram_array->size() == 2);
 
       // determine histogram type
@@ -427,25 +512,41 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       const Json_string *hist_type_str = down_cast<const Json_string *>(hist_type_dom);
       assert(hist_type_str->value() == "singleton" || hist_type_str->value() == "equi-height");
       auto bucket_type = hist_type_str->value() == "singleton" ? 
-        JsonGram::BucketType::SINGLETON : JsonGram::BucketType::EQUI_HEIGHT;
+        JFlexHistType::SINGLETON : JFlexHistType::EQUI_HEIGHT;
 
       // Create JsonGram. T is determined from values_type
       JsonGram<std::any> *json_gram = nullptr;
       switch (values_type) {
         case BucketValueType::INT: {
-          json_gram = JsonGram<longlong>::create(get_mem_root(), bucket_type);
+          if (bucket_type == JFlexHistType::SINGLETON) {
+            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_singlegram(get_mem_root()));
+          } else {
+            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_equigram(get_mem_root()));
+          }
           break;
         }
         case BucketValueType::FLOAT: {
-          json_gram = JsonGram<double>::create(get_mem_root(), bucket_type);
+          if (bucket_type == JFlexHistType::SINGLETON) {
+            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_singlegram(get_mem_root()));
+          } else {
+            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_equigram(get_mem_root()));
+          }
           break;
         }
         case BucketValueType::BOOL: {
-          json_gram = JsonGram<bool>::create(get_mem_root(), bucket_type);
+          if (bucket_type == JFlexHistType::SINGLETON) {
+            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_singlegram(get_mem_root()));
+          } else {
+            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_equigram(get_mem_root()));
+          }
           break;
         }
         case BucketValueType::STRING: {
-          json_gram = JsonGram<BucketString>::create(get_mem_root(), bucket_type);
+          if (bucket_type == JFlexHistType::SINGLETON) {
+            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_singlegram(get_mem_root()));
+          } else {
+            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_equigram(get_mem_root()));
+          }
           break;
         }
         case BucketValueType::UNKNOWN: {
@@ -455,20 +556,28 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         }
       }
 
-      // determine number of buckets
-      const Json_array *buckets_array = down_cast<const Json_array *>(histogram_array[1]);
-      size_t num_buckets = buckets_array->size();
-
-      // reserve space for the buckets on mem_root
-      if (json_gram->buckets_type == BucketType::SINGLETON) {
-        json_gram->m_buckets.single_bucks.reserve(num_buckets);
-
-        // TODO: Copy over bucket contents
-      } else {
-        json_gram->m_buckets.equi_bucks.reserve(num_buckets);
-
+      const Json_array *buckets_array = down_cast<const Json_array *>((*histogram_array)[1]);
+      switch (values_type) {
+        case BucketValueType::INT: {
+          std::any_cast<JsonGram<longlong> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          break;
+        }
+        case BucketValueType::FLOAT: {
+          std::any_cast<JsonGram<double> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          break;
+        }
+        case BucketValueType::BOOL: {
+          std::any_cast<JsonGram<bool> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          break;
+        }
+        case BucketValueType::STRING: {
+          std::any_cast<JsonGram<BucketString> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          break;
+        }
+        case BucketValueType::UNKNOWN: {
+          assert(false);
+        }
       }
-
     }
     
 
