@@ -78,6 +78,50 @@ JsonGram<T> *JsonGram<T>::create_equigram(MEM_ROOT *mem_root) {
     return new (mem_root) JsonGram<T>{JFlexHistType::EQUI_HEIGHT, Mem_root_array<SingleBucket>(mem_root)};
 }
 
+template<>
+JsonGram<BucketString> *JsonGram<BucketString>::duplicate_onto(MEM_ROOT *mem_root) {
+  auto *dupe = copy_struct(mem_root);
+  if (dupe->buckets_type == JFlexHistType::SINGLETON) {
+    dupe->m_buckets.single_bucks.reserve(m_buckets.single_bucks.size());
+
+    for (const auto &bucket : m_buckets.single_bucks) {
+        BucketString bs;
+        if (bucket.value.dupe(mem_root, &bs)) return nullptr;
+
+        auto duped_bucket = JsonGram<BucketString>::SingleBucket{bs, bucket.frequency};
+        dupe->m_buckets.single_bucks.push_back(duped_bucket);
+    }
+  } else {
+    dupe->m_buckets.equi_bucks.reserve(m_buckets.equi_bucks.size());
+
+    for (const auto &bucket : m_buckets.equi_bucks) {
+        BucketString bs;
+        if (bucket.upper_bound.dupe(mem_root, &bs)) return nullptr;
+
+        auto duped_bucket = JsonGram<BucketString>::EquiBucket{bs, bucket.frequency, bucket.ndv};
+        dupe->m_buckets.equi_bucks.push_back(duped_bucket);
+    }
+  }
+  return dupe;
+}
+
+template<typename T>
+JsonGram<T> *JsonGram<T>::duplicate_onto(MEM_ROOT *mem_root) {
+  auto *dupe = copy_struct(mem_root);
+  if (dupe->buckets_type == JFlexHistType::SINGLETON) {
+    dupe->m_buckets.single_bucks.reserve(m_buckets.single_bucks.size());    
+    for (const auto &bucket : m_buckets.single_bucks) {
+      dupe->m_buckets.single_bucks.emplace_back(bucket);
+    }
+  } else {
+    dupe->m_buckets.equi_bucks.reserve(m_buckets.equi_bucks.size());
+    for (const auto &bucket : m_buckets.equi_bucks) {
+      dupe->m_buckets.equi_bucks.emplace_back(bucket);
+    }
+  }
+  return dupe;
+}
+
 Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
                              bool *error)
     : Histogram(mem_root, other, error), m_buckets(mem_root) {
@@ -126,57 +170,31 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
     
 
     // Duplicate histogram data
-    JsonGram<std::any> *json_gram = nullptr;
+    void *json_gram = nullptr;
     if (bucket.histogram) {
-        json_gram = bucket.histogram->copy_struct(mem_root, bucket.values_type);
-        if (json_gram->buckets_type == JFlexHistType::SINGLETON) {
-          const size_t num_buckets = bucket.histogram->m_buckets.single_bucks.size(); 
-          json_gram->m_buckets.single_bucks.reserve(num_buckets);
-          
-          // BucketString buckets are a special case, as the string they point to must also be copied
-          if (bucket.values_type == BucketValueType::STRING) {
-            const auto str_gram_from = std::any_cast<JsonGram<BucketString> *>(bucket.histogram);
-            auto *str_gram_into = std::any_cast<JsonGram<BucketString> *>(json_gram);
-            for (const auto &jg_buck : str_gram_from->m_buckets.single_bucks) {
-                BucketString bs;
-                if (jg_buck.value.dupe(mem_root, &bs)) {
-                  *error = true;
-                  return;
-                }
-
-                auto duped_bucket = JsonGram<BucketString>::SingleBucket{bs, jg_buck.frequency};
-                str_gram_into->m_buckets.single_bucks.push_back(duped_bucket);
-            }
-          } else {
-            // Other bucket types can simply be copied directly
-            for (const auto &jg_buck : bucket.histogram->m_buckets.single_bucks) {
-              json_gram->m_buckets.single_bucks.emplace_back(jg_buck);
-            }
-          }
-        } else {
-          const size_t num_buckets = bucket.histogram->m_buckets.equi_bucks.size(); 
-          json_gram->m_buckets.equi_bucks.reserve(num_buckets);
-          
-          if (bucket.values_type == BucketValueType::STRING) {
-            const auto str_gram_from = std::any_cast<JsonGram<BucketString> *>(bucket.histogram);
-            auto *str_gram_into = std::any_cast<JsonGram<BucketString> *>(json_gram);
-            for (const auto &jg_buck : str_gram_from->m_buckets.equi_bucks) {
-                BucketString bs;
-                if (jg_buck.upper_bound.dupe(mem_root, &bs)) {
-                  *error = true;
-                  return;
-                }
-
-                auto duped_bucket = JsonGram<BucketString>::EquiBucket{bs, jg_buck.frequency, jg_buck.ndv};
-                str_gram_into->m_buckets.equi_bucks.push_back(duped_bucket);
-            }
-          } else {
-            // Other bucket types can simply be copied directly
-            for (const auto &jg_buck : bucket.histogram->m_buckets.equi_bucks) {
-              json_gram->m_buckets.equi_bucks.emplace_back(jg_buck);
-            }
-          }
+      switch (bucket.values_type) {
+        case BucketValueType::INT: {
+          json_gram = static_cast<JsonGram<longlong> *>(bucket.histogram)->duplicate_onto(mem_root);
+          break;
         }
+        case BucketValueType::FLOAT: {
+          json_gram = static_cast<JsonGram<double> *>(bucket.histogram)->duplicate_onto(mem_root);
+          break;
+        }
+        case BucketValueType::BOOL: {
+          json_gram = static_cast<JsonGram<bool> *>(bucket.histogram)->duplicate_onto(mem_root);
+          break;
+        }
+        case BucketValueType::STRING: {
+          json_gram = static_cast<JsonGram<BucketString> *>(bucket.histogram)->duplicate_onto(mem_root);
+          break;
+        }
+        case BucketValueType::UNKNOWN: {
+          assert(false);
+          *error = true;
+          return;
+        }
+      }
     }
 
     JsonBucket copy(string_dup, bucket.frequency, bucket.null_values,
@@ -331,27 +349,27 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
         Json_object json_gram;
 
         // Add type string to object
-        const Json_string json_gram_type(bucket.histogram->type_str());
-        if (json_gram.add_clone(JsonGram<int>::type_str(), &json_gram_type))
+        const Json_string json_gram_type(JsonGram<void>::type_str());
+        if (json_gram.add_clone(JsonGram<void>::type_str(), &json_gram_type))
           return true;
 
         // Populate buckets array
         Json_array buckets_arr;
         switch (bucket.values_type) {
           case BucketValueType::INT: {
-            std::any_cast<JsonGram<longlong> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+            static_cast<JsonGram<longlong> *>(bucket.histogram)->populate_json_array(&buckets_arr);
             break;
           }
           case BucketValueType::FLOAT: {
-            std::any_cast<JsonGram<double> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+            static_cast<JsonGram<double> *>(bucket.histogram)->populate_json_array(&buckets_arr);
             break;
           }
           case BucketValueType::BOOL: {
-            std::any_cast<JsonGram<bool> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+            static_cast<JsonGram<bool> *>(bucket.histogram)->populate_json_array(&buckets_arr);
             break;
           }
           case BucketValueType::STRING: {
-            std::any_cast<JsonGram<BucketString> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+            static_cast<JsonGram<BucketString> *>(bucket.histogram)->populate_json_array(&buckets_arr);
             break;
           }
           case BucketValueType::UNKNOWN: {
@@ -594,7 +612,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       ndv_opt = ndv;
     }
 
-    JsonGram<std::any> *json_gram = nullptr;
+    void *json_gram = nullptr;
     if (bucket->size() >= allowed_size_wo_opts + 4) {
       // GET SEVENTH BUCKET: JsonGram
       assert(values_type != BucketValueType::UNKNOWN);
@@ -602,9 +620,9 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       // Missing type checks inbound
       const Json_dom *histogram_object_dom = (*bucket)[6];
       const Json_object *histogram_object = down_cast<const Json_object *>(histogram_object_dom);
-      const Json_dom *hist_type_dom = histogram_object->get(JsonGram<int>::type_str());
+      const Json_dom *hist_type_dom = histogram_object->get(JsonGram<void>::type_str());
       if (hist_type_dom == nullptr) {
-        context->report_missing_attribute(JsonGram<int>::type_str());
+        context->report_missing_attribute(JsonGram<void>::type_str());
         return true;
       }
       const Json_dom *hist_buckets_dom = histogram_object->get(buckets_str());
@@ -623,33 +641,33 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       switch (values_type) {
         case BucketValueType::INT: {
           if (bucket_type == JFlexHistType::SINGLETON) {
-            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_singlegram(get_mem_root()));
+            json_gram = static_cast<void *>(JsonGram<longlong>::create_singlegram(get_mem_root()));
           } else {
-            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_equigram(get_mem_root()));
+            json_gram = static_cast<void *>(JsonGram<longlong>::create_equigram(get_mem_root()));
           }
           break;
         }
         case BucketValueType::FLOAT: {
           if (bucket_type == JFlexHistType::SINGLETON) {
-            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_singlegram(get_mem_root()));
+            json_gram = static_cast<void *>(JsonGram<double>::create_singlegram(get_mem_root()));
           } else {
-            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_equigram(get_mem_root()));
+            json_gram = static_cast<void *>(JsonGram<double>::create_equigram(get_mem_root()));
           }
           break;
         }
         case BucketValueType::BOOL: {
           if (bucket_type == JFlexHistType::SINGLETON) {
-            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_singlegram(get_mem_root()));
+            json_gram = static_cast<void *>(JsonGram<bool>::create_singlegram(get_mem_root()));
           } else {
-            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_equigram(get_mem_root()));
+            json_gram = static_cast<void *>(JsonGram<bool>::create_equigram(get_mem_root()));
           }
           break;
         }
         case BucketValueType::STRING: {
           if (bucket_type == JFlexHistType::SINGLETON) {
-            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_singlegram(get_mem_root()));
+            json_gram = static_cast<void *>(JsonGram<BucketString>::create_singlegram(get_mem_root()));
           } else {
-            json_gram = std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_equigram(get_mem_root()));
+            json_gram = static_cast<void *>(JsonGram<BucketString>::create_equigram(get_mem_root()));
           }
           break;
         }
@@ -663,19 +681,19 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       const Json_array *buckets_array = down_cast<const Json_array *>(hist_buckets_dom);
       switch (values_type) {
         case BucketValueType::INT: {
-          std::any_cast<JsonGram<longlong> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          static_cast<JsonGram<longlong> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
           break;
         }
         case BucketValueType::FLOAT: {
-          std::any_cast<JsonGram<double> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          static_cast<JsonGram<double> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
           break;
         }
         case BucketValueType::BOOL: {
-          std::any_cast<JsonGram<bool> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          static_cast<JsonGram<bool> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
           break;
         }
         case BucketValueType::STRING: {
-          std::any_cast<JsonGram<BucketString> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          static_cast<JsonGram<BucketString> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
           break;
         }
         case BucketValueType::UNKNOWN: {

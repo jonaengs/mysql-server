@@ -121,31 +121,37 @@ struct JsonGram {
   static JsonGram<T>* create_equigram(MEM_ROOT *mem_root);
   bool json_to_json_gram(const Json_array *buckets_array, Json_flex *parent, Error_context *context);
   bool populate_json_array(Json_array *buckets_array);
+  JsonGram<T> *duplicate_onto(MEM_ROOT *mem_root);
 
   const char *get_type_string() {
     return (buckets_type == JFlexHistType::SINGLETON) ? 
       singlebucket_str() : equibucket_str();
   }
-  
-  JsonGram<T>* copy_struct(MEM_ROOT *mem_root, BucketValueType values_type) {
-    if (buckets_type == JFlexHistType::SINGLETON) {
-      switch (values_type) {
-        case BucketValueType::INT: return std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_singlegram(mem_root));
-        case BucketValueType::FLOAT: return std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_singlegram(mem_root));
-        case BucketValueType::BOOL: return std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_singlegram(mem_root));
-        case BucketValueType::STRING: return std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_singlegram(mem_root));
-        default: assert(false);
-      }
-    } else {
-      switch (values_type) {
-        case BucketValueType::INT: return std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_equigram(mem_root));
-        case BucketValueType::FLOAT: return std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_equigram(mem_root));
-        case BucketValueType::BOOL: return std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_equigram(mem_root));
-        case BucketValueType::STRING: return std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_equigram(mem_root));
-        default: assert(false);
-      }
-    }
+
+  JsonGram<T>* copy_struct(MEM_ROOT *mem_root) {
+    return (buckets_type == JFlexHistType::SINGLETON) ? 
+      create_singlegram(mem_root) : create_equigram(mem_root);
   }
+  
+  // JsonGram<T>* copy_struct(MEM_ROOT *mem_root, BucketValueType values_type) {
+  //   if (buckets_type == JFlexHistType::SINGLETON) {
+  //     switch (values_type) {
+  //       case BucketValueType::INT: return std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_singlegram(mem_root));
+  //       case BucketValueType::FLOAT: return std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_singlegram(mem_root));
+  //       case BucketValueType::BOOL: return std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_singlegram(mem_root));
+  //       case BucketValueType::STRING: return std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_singlegram(mem_root));
+  //       default: assert(false);
+  //     }
+  //   } else {
+  //     switch (values_type) {
+  //       case BucketValueType::INT: return std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_equigram(mem_root));
+  //       case BucketValueType::FLOAT: return std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_equigram(mem_root));
+  //       case BucketValueType::BOOL: return std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_equigram(mem_root));
+  //       case BucketValueType::STRING: return std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_equigram(mem_root));
+  //       default: assert(false);
+  //     }
+  //   }
+  // }
 
   static constexpr const char *singlebucket_str() { return "singleton"; }
   static constexpr const char *equibucket_str() { return "equi-height"; }
@@ -177,7 +183,7 @@ struct JsonBucket {
   const maybe_primitive min_val;
   const maybe_primitive max_val;
   const std::optional<longlong> ndv;
-  JsonGram<std::any> *histogram;
+  void *histogram;  // ptr to a JsonGram or a nullptr
 
   // Assigned at creation.
   const BucketValueType values_type;
@@ -191,7 +197,7 @@ struct JsonBucket {
 
   JsonBucket(String key_path, double frequency, double null_values,
              maybe_primitive min_val, maybe_primitive max_val, std::optional<longlong> ndv, 
-             BucketValueType values_type, JsonGram<std::any> *json_gram)
+             BucketValueType values_type, void *json_gram)
       : key_path(key_path), frequency(frequency),
         null_values(null_values),
         min_val(min_val), max_val(max_val),
