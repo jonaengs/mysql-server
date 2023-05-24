@@ -943,103 +943,249 @@ std::optional<const JsonBucket *> Json_flex::find_bucket(const String &path) con
 }
 
 template<>
-double Json_flex::lookup_bucket(const String &path, const double cmp_val) const {
+Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const double cmp_val) const {
   if (auto bucketOpt = find_bucket(path)) {
     const JsonBucket *bucket = *bucketOpt;
+    double base_freq = bucket->frequency * (1.0 - bucket->null_values);
+
     if (bucket->min_val && bucket->max_val) {
-      if ((*bucket->min_val)._float > cmp_val || (*bucket->max_val)._float < cmp_val) {
-        return 0.0;
+      if ((*bucket->min_val)._float > cmp_val) {
+        return lookup_result{0, 0, base_freq};
+      } 
+      if ((*bucket->max_val)._float < cmp_val) {
+        return lookup_result{0, base_freq, 0};
       }
     }
-    return bucket->frequency * (1.0 - bucket->null_values);
+
+    // Lookup cmp_val in histogram
+    // assumes histogram buckets are sorted in ascending order
+    if (bucket->histogram) {
+      assert(bucket->values_type == BucketValueType::FLOAT);
+      auto histogram = static_cast<JsonGram<double> *>(bucket->histogram);
+
+      double cumulative = 0;
+      if (histogram->buckets_type == JFlexHistType::SINGLETON) {
+        for (const auto &jg_buck : histogram->m_buckets.single_bucks) {
+          if (jg_buck.value == cmp_val) {
+            return lookup_result{
+              base_freq * jg_buck.frequency, 
+              cumulative * base_freq, 
+              (1 - cumulative) * base_freq
+            };
+          }
+          cumulative += jg_buck.frequency;
+        }
+      } else {
+        for (const auto &jg_buck : histogram->m_buckets.equi_bucks) {
+          cumulative += jg_buck.frequency;
+          if (jg_buck.upper_bound >= cmp_val) {
+            return lookup_result{
+              (base_freq * jg_buck.frequency) / jg_buck.ndv,
+              cumulative * base_freq, 
+              (1 - cumulative) * base_freq
+            };
+          }
+        }
+      }
+    }
+
+    // 
+    if (bucket->ndv) {
+      return lookup_result{base_freq / (*bucket->ndv), base_freq * 0.3, base_freq * 0.3};
+    }
+
+    return lookup_result{base_freq * 0.1, base_freq * 0.3, base_freq * 0.3};
   }
-  return min_frequency;
+  return lookup_result{min_frequency * 0.1, min_frequency * 0.3, min_frequency * 0.3};
 }
 
 template<>
-double Json_flex::lookup_bucket(const String &path, String cmp_val) const {
+Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, String cmp_val) const {
   if (auto bucketOpt = find_bucket(path)) {
     const JsonBucket *bucket = *bucketOpt;
+    double base_freq = bucket->frequency * (1.0 - bucket->null_values);
+
+    // Check if cmp_val out of range of bucket values
     if (bucket->min_val && bucket->max_val) {
-      BucketString min_buckstr = (*bucket->min_val)._string;
-      BucketString max_buckstr = (*bucket->max_val)._string;
-      String min_string = String(min_buckstr.m_ptr, min_buckstr.m_length, min_buckstr.m_charset);
-      String max_string = String(max_buckstr.m_ptr, max_buckstr.m_length, max_buckstr.m_charset);
-      if (stringcmp(&min_string, &cmp_val) > 0 || stringcmp(&max_string, &cmp_val) < 0) {
-        return 0.0;
-      } 
+      String min_string = (*bucket->min_val)._string.to_string();
+      String max_string = (*bucket->max_val)._string.to_string();
+      if (stringcmp(&min_string, &cmp_val) > 0) {
+        return lookup_result{0, 0, base_freq};
+      }
+      if (stringcmp(&max_string, &cmp_val) < 0) {
+        return lookup_result{0, base_freq, 0};
+      }
     }
-    return bucket->frequency * (1.0 - bucket->null_values);
+
+    if (bucket->histogram) {
+      assert(bucket->values_type == BucketValueType::STRING);
+      auto histogram = static_cast<JsonGram<BucketString> *>(bucket->histogram);
+
+      double cumulative = 0;
+      if (histogram->buckets_type == JFlexHistType::SINGLETON) {
+        for (const auto &jg_buck : histogram->m_buckets.single_bucks) {
+          String buck_str = jg_buck.value.to_string();
+          // TODO: Stop early if buck_str > cmp_val
+          if (stringcmp(&buck_str, &cmp_val) == 0) {
+            return lookup_result{
+              base_freq * jg_buck.frequency, 
+              cumulative * base_freq, 
+              (1 - cumulative) * base_freq
+            };
+          }
+          cumulative += jg_buck.frequency;
+        }
+      } else {
+        assert(false); // No support for equi-height string histograms for now
+      }
+    }
+
+    // 
+    if (bucket->ndv) {
+      return lookup_result{base_freq / (*bucket->ndv), base_freq * 0.3, base_freq * 0.3};
+    }
+
+    return lookup_result{base_freq * 0.1, base_freq * 0.3, base_freq * 0.3};
   }
-  return min_frequency;
+
+  return lookup_result{min_frequency * 0.1, min_frequency * 0.3, min_frequency * 0.3};
+}
+
+// Returns {eq_estimate, 0, 0}, because can you even do gt/lt for boolean values??
+template<>
+Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const bool cmp_val) const {
+  if (auto bucketOpt = find_bucket(path)) {
+    const JsonBucket *bucket = *bucketOpt;
+    double base_freq = bucket->frequency * (1.0 - bucket->null_values);
+
+    if (bucket->min_val && bucket->max_val) {
+      if ((*bucket->min_val)._bool == (*bucket->max_val)._bool) {
+        return {
+          (*bucket->min_val)._bool == cmp_val ? base_freq : 0, 
+          0, 0
+        };
+      }
+    }
+
+    // Lookup cmp_val in histogram
+    // assumes histogram buckets are sorted in ascending order
+    if (bucket->histogram) {
+      auto histogram = static_cast<JsonGram<bool> *>(bucket->histogram);
+
+      assert(histogram->buckets_type == JFlexHistType::SINGLETON); // Say no to equi-height histograms for boolean values
+
+      if (histogram->m_buckets.single_bucks.size() >= 1) {
+        auto first = histogram->m_buckets.single_bucks[0];
+        auto mult = first.value == cmp_val ? first.frequency : 1 - first.frequency;
+        return lookup_result{mult * base_freq, 0, 0};
+      }
+    }
+
+    return lookup_result{base_freq * 0.5, base_freq * 0.5, base_freq * 0.5};
+  }
+
+  // If bucket can't be found, return global minimum frequency
+  return {min_frequency * 0.5, min_frequency * 0.5, min_frequency * 0.5};
 }
 
 template<>
-double Json_flex::lookup_bucket(const String &path, const longlong cmp_val) const {
+Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const longlong cmp_val) const {
   if (auto bucketOpt = find_bucket(path)) {
     const JsonBucket *bucket = *bucketOpt;
+    double base_freq = bucket->frequency * (1.0 - bucket->null_values);
+
+    // Check if cmp_val out of range of bucket values
     if (bucket->min_val && bucket->max_val) {
-      if ((*bucket->min_val)._int > cmp_val || (*bucket->max_val)._int < cmp_val) {
-        return 0.0;
+      if ((*bucket->min_val)._int > cmp_val) {
+        return lookup_result{0, 0, base_freq};
       } 
+      if ((*bucket->max_val)._int < cmp_val) {
+        return lookup_result{0, base_freq, 0};
+      }
     }
-    return bucket->frequency * (1.0 - bucket->null_values);
+
+    // Lookup cmp_val in histogram
+    // assumes histogram buckets are sorted in ascending order
+    if (bucket->histogram) {
+      assert(bucket->values_type == BucketValueType::INT);
+      auto histogram = static_cast<JsonGram<longlong> *>(bucket->histogram);
+
+      double cumulative = 0;
+      if (histogram->buckets_type == JFlexHistType::SINGLETON) {
+        for (const auto &jg_buck : histogram->m_buckets.single_bucks) {
+          if (jg_buck.value == cmp_val) {
+            return lookup_result{
+              base_freq * jg_buck.frequency, 
+              cumulative * base_freq, 
+              (1 - cumulative) * base_freq
+            };
+          }
+          cumulative += jg_buck.frequency;
+        }
+      } else {
+        for (const auto &jg_buck : histogram->m_buckets.equi_bucks) {
+          cumulative += jg_buck.frequency;
+          if (jg_buck.upper_bound >= cmp_val) {
+            return lookup_result{
+              (base_freq * jg_buck.frequency) / jg_buck.ndv,
+              cumulative * base_freq, 
+              (1 - cumulative) * base_freq
+            };
+          }
+        }
+      }
+    }
+
+    // 
+    if (bucket->ndv) {
+      return lookup_result{base_freq / (*bucket->ndv), base_freq * 0.3, base_freq * 0.3};
+    }
+
+    return lookup_result{base_freq * 0.1, base_freq * 0.3, base_freq * 0.3};
   }
-  return min_frequency;
+
+  // If bucket can't be found, return global minimum frequency
+  return {min_frequency * 0.1, min_frequency * 0.3, min_frequency * 0.3};
 }
 
-double Json_flex::lookup_bucket(const String &path) const {
+Json_flex::lookup_result Json_flex::lookup_bucket(const String &path) const {
   if (auto bucketOpt = find_bucket(path)) {
     const JsonBucket *bucket = *bucketOpt;
-    return bucket->frequency * (1.0 - bucket->null_values);
+    double base_freq = bucket->frequency * (1.0 - bucket->null_values);
+    
+    if (bucket->ndv) {
+      return lookup_result{base_freq / (*bucket->ndv), base_freq * 0.3, base_freq * 0.3};
+    }
+
+    return lookup_result{base_freq * 0.1, base_freq * 0.3, base_freq * 0.3};
   }
-  return min_frequency;
+  return lookup_result{min_frequency * 0.1, min_frequency * 0.3, min_frequency * 0.3};
 }
 
 template<typename T>
 double Json_flex::get_equal_to_selectivity(const String &path, T cmp_val) const {
-  double base_selectivity = lookup_bucket(path, cmp_val);
-  return base_selectivity;
-  
-  // auto bucket = find_bucket(path);
-  // if (bucket && (*bucket)->ndv) {
-  //   return base_selectivity / *(*bucket)->ndv;
-  // } else {
-  //   return base_selectivity * 0.1;
-  // }
+  return lookup_bucket(path, cmp_val).eq_frequency;
 }
 
 template<typename T>
 double Json_flex::get_less_than_selectivity(const String &path, T cmp_val) const {
-  return lookup_bucket(path, cmp_val);
-  // return lookup_bucket(path, cmp_val) * 0.3;
+  return lookup_bucket(path, cmp_val).lt_frequency;
 }
 template<typename T>
 double Json_flex::get_greater_than_selectivity(const String &path, T cmp_val) const {
-  return lookup_bucket(path, cmp_val);
-  // return lookup_bucket(path, cmp_val) * 0.3;
+  return lookup_bucket(path, cmp_val).gt_frequency;
 }
 
 double Json_flex::get_equal_to_selectivity(const String &path) const {
-  double base_selectivity = lookup_bucket(path);
-  return base_selectivity;
-  
-  // auto bucket = find_bucket(path);
-  // if (bucket && (*bucket)->ndv) {
-  //   return base_selectivity / *(*bucket)->ndv;
-  // } else {
-  //   return base_selectivity * 0.1;
-  // }
+  return lookup_bucket(path).eq_frequency;
 }
 
 double Json_flex::get_less_than_selectivity(const String &path) const {
-  return lookup_bucket(path);
-  // return lookup_bucket(path) * 0.3;
+  return lookup_bucket(path).gt_frequency;
 }
 
 double Json_flex::get_greater_than_selectivity(const String &path) const {
-  return lookup_bucket(path);
-  // return lookup_bucket(path) * 0.3;
+  return lookup_bucket(path).lt_frequency;
 }
 
 }  // namespace histograms

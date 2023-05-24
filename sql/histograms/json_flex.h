@@ -213,6 +213,12 @@ struct JsonBucket {
 };
 
 class Json_flex : public Histogram {
+  struct lookup_result {
+    double eq_frequency;
+    double lt_frequency;
+    double gt_frequency;
+  };
+
  public:
   /**
     Json_flex histogram factory method.
@@ -306,10 +312,10 @@ class Json_flex : public Histogram {
 
   // HELPER FUNCTIONS:
 
-  std::optional<const JsonBucket *> find_bucket(const String &path) const;
-  double lookup_bucket(const String &path) const;
   template<typename T>
-  double lookup_bucket(const String &path, const T cmp_val) const;
+  lookup_result lookup_bucket(const String &path, const T cmp_val) const;
+  lookup_result lookup_bucket(const String &path) const;
+  std::optional<const JsonBucket *> find_bucket(const String &path) const;
   
  protected:
   /**
