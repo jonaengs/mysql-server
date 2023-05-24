@@ -253,6 +253,28 @@ bool Json_flex::histogram_to_json(Json_object *json_object) const {
 std::string s1("Test1");
 std::string s2("ABCDEF");
 
+template<typename T>
+bool JsonGram<T>::populate_json_array(Json_array *buckets_array) {
+  if (buckets_type == JFlexHistType::SINGLETON) {
+    Json_array json_bucket;
+    for (const auto &bucket : m_buckets.single_bucks) {
+      if (Json_flex::add_value_json_bucket(bucket.value, &json_bucket)) return true;
+      if (Json_flex::add_value_json_bucket(bucket.frequency, &json_bucket)) return true;
+    }
+    if (buckets_array->append_clone(&json_bucket)) return true;
+  } else {
+    Json_array json_bucket;
+    for (const auto &bucket : m_buckets.equi_bucks) {
+      if (Json_flex::add_value_json_bucket(bucket.upper_bound, &json_bucket)) return true;
+      if (Json_flex::add_value_json_bucket(bucket.frequency, &json_bucket)) return true;
+      if (Json_flex::add_value_json_bucket(bucket.ndv, &json_bucket)) return true;
+    }
+    if (buckets_array->append_clone(&json_bucket)) return true;
+  }
+
+  return false;
+}
+
 bool Json_flex::create_json_bucket(const JsonBucket &bucket,
                                       Json_array *json_bucket) {
 
@@ -296,7 +318,7 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
       case BucketValueType::UNKNOWN: {
         // unreachable
         assert(false);
-        break;
+        return true;
       }
     }
     
@@ -306,7 +328,42 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
 
       // Add Histogram
       if (bucket.histogram) {
-        // TODO
+        Json_object json_gram;
+
+        // Add type string to object
+        const Json_string json_gram_type(bucket.histogram->type_str());
+        if (json_gram.add_clone(JsonGram<int>::type_str(), &json_gram_type))
+          return true;
+
+        // Populate buckets array
+        Json_array buckets_arr;
+        switch (bucket.values_type) {
+          case BucketValueType::INT: {
+            std::any_cast<JsonGram<longlong> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+            break;
+          }
+          case BucketValueType::FLOAT: {
+            std::any_cast<JsonGram<double> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+            break;
+          }
+          case BucketValueType::BOOL: {
+            std::any_cast<JsonGram<bool> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+            break;
+          }
+          case BucketValueType::STRING: {
+            std::any_cast<JsonGram<BucketString> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+            break;
+          }
+          case BucketValueType::UNKNOWN: {
+            // again, unreachable
+            assert(false);
+            return true;
+          }
+        }
+
+        // Add buckets array to object
+        if (json_gram.add_clone(buckets_str(), &buckets_arr))
+          return true;
       }
     }
   }
@@ -542,13 +599,21 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       // GET SEVENTH BUCKET: JsonGram
       assert(values_type != BucketValueType::UNKNOWN);
 
-      // Missing safety checks inbound. Shield your eyes.
-      const Json_dom *histogram_array_dom = (*bucket)[6];
-      const Json_array *histogram_array = down_cast<const Json_array *>(histogram_array_dom);
-      assert(histogram_array->size() == 2);
+      // Missing type checks inbound
+      const Json_dom *histogram_object_dom = (*bucket)[6];
+      const Json_object *histogram_object = down_cast<const Json_object *>(histogram_object_dom);
+      const Json_dom *hist_type_dom = histogram_object->get(JsonGram<int>::type_str());
+      if (hist_type_dom == nullptr) {
+        context->report_missing_attribute(JsonGram<int>::type_str());
+        return true;
+      }
+      const Json_dom *hist_buckets_dom = histogram_object->get(buckets_str());
+      if (hist_buckets_dom == nullptr) {
+        context->report_missing_attribute(Histogram::buckets_str());
+        return true;
+      }
 
       // determine histogram type
-      const Json_dom *hist_type_dom = (*histogram_array)[0];
       const Json_string *hist_type_str = down_cast<const Json_string *>(hist_type_dom);
       assert(hist_type_str->value() == "singleton" || hist_type_str->value() == "equi-height");
       auto bucket_type = hist_type_str->value() == "singleton" ? 
@@ -595,7 +660,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         }
       }
 
-      const Json_array *buckets_array = down_cast<const Json_array *>((*histogram_array)[1]);
+      const Json_array *buckets_array = down_cast<const Json_array *>(hist_buckets_dom);
       switch (values_type) {
         case BucketValueType::INT: {
           std::any_cast<JsonGram<longlong> *>(json_gram)->json_to_json_gram(buckets_array, this, context);

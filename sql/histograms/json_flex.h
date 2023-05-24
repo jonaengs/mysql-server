@@ -120,6 +120,12 @@ struct JsonGram {
   static JsonGram<T>* create_singlegram(MEM_ROOT *mem_root);
   static JsonGram<T>* create_equigram(MEM_ROOT *mem_root);
   bool json_to_json_gram(const Json_array *buckets_array, Json_flex *parent, Error_context *context);
+  bool populate_json_array(Json_array *buckets_array);
+
+  const char *get_type_string() {
+    return (buckets_type == JFlexHistType::SINGLETON) ? 
+      singlebucket_str() : equibucket_str();
+  }
   
   JsonGram<T>* copy_struct(MEM_ROOT *mem_root, BucketValueType values_type) {
     if (buckets_type == JFlexHistType::SINGLETON) {
@@ -143,6 +149,7 @@ struct JsonGram {
 
   static constexpr const char *singlebucket_str() { return "singleton"; }
   static constexpr const char *equibucket_str() { return "equi-height"; }
+  static constexpr const char *type_str() { return "type"; }
 };
 
 // union anygram {
@@ -352,6 +359,8 @@ class Json_flex : public Histogram {
   */
   Json_flex(MEM_ROOT *mem_root, const Json_flex &other, bool *error);
 
+// Make public so we can access from JsonGram. Only temporary until a better solution can be found
+public:
   /**
     Add value to a JSON bucket
 
@@ -367,7 +376,7 @@ class Json_flex : public Histogram {
   static bool add_value_json_bucket(const double &value, Json_array *json_bucket);
   static bool add_value_json_bucket(const longlong &value, Json_array *json_bucket);
   static bool add_value_json_bucket(const bool &value, Json_array *json_bucket);
-
+private:
   /**
     Convert one bucket to a JSON object.
 
