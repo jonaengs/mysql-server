@@ -61,6 +61,27 @@ struct BucketString {
   static BucketString from_string(String &str) {
     return BucketString{str.ptr(), str.length(), str.charset()};
   }
+
+  /**
+   It is up to the caller to check for OOM error by checking the duplicate's m_ptr
+  */
+  static BucketString dupe(MEM_ROOT *mem_root, BucketString &to_be_duped) {
+    String s = to_be_duped.to_string();
+    String duped = String(s.dup(mem_root), s.length(), s.charset());
+    if (duped.ptr() == nullptr) assert(false);
+    return BucketString::from_string(duped);
+  }
+
+  bool dupe(MEM_ROOT *mem_root, BucketString *into) const {
+    String s = this->to_string();
+    BucketString duped = BucketString{s.dup(mem_root), s.length(), s.charset()};
+    if (duped.m_ptr == nullptr) {
+      assert(false);
+      return true;
+    }
+    *into = duped;
+    return false;
+  }
 };
 
 union json_primitive {
@@ -95,11 +116,30 @@ struct JsonGram {
   JFlexHistType buckets_type;
   Buckets m_buckets;
 
-  static JsonGram<T>* create(MEM_ROOT *mem_root, JFlexHistType buckets_type);
+  // creation functions assume no OOM. Caller can check for null pointer
   static JsonGram<T>* create_singlegram(MEM_ROOT *mem_root);
   static JsonGram<T>* create_equigram(MEM_ROOT *mem_root);
   bool json_to_json_gram(const Json_array *buckets_array, Json_flex *parent, Error_context *context);
   
+  JsonGram<T>* copy_struct(MEM_ROOT *mem_root, BucketValueType values_type) {
+    if (buckets_type == JFlexHistType::SINGLETON) {
+      switch (values_type) {
+        case BucketValueType::INT: return std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_singlegram(mem_root));
+        case BucketValueType::FLOAT: return std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_singlegram(mem_root));
+        case BucketValueType::BOOL: return std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_singlegram(mem_root));
+        case BucketValueType::STRING: return std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_singlegram(mem_root));
+        default: assert(false);
+      }
+    } else {
+      switch (values_type) {
+        case BucketValueType::INT: return std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_equigram(mem_root));
+        case BucketValueType::FLOAT: return std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_equigram(mem_root));
+        case BucketValueType::BOOL: return std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_equigram(mem_root));
+        case BucketValueType::STRING: return std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_equigram(mem_root));
+        default: assert(false);
+      }
+    }
+  }
 
   static constexpr const char *singlebucket_str() { return "singleton"; }
   static constexpr const char *equibucket_str() { return "equi-height"; }
@@ -143,11 +183,12 @@ struct JsonBucket {
         values_type(BucketValueType::UNKNOWN){}
 
   JsonBucket(String key_path, double frequency, double null_values,
-             maybe_primitive min_val, maybe_primitive max_val, std::optional<longlong> ndv, BucketValueType values_type)
+             maybe_primitive min_val, maybe_primitive max_val, std::optional<longlong> ndv, 
+             BucketValueType values_type, JsonGram<std::any> *json_gram)
       : key_path(key_path), frequency(frequency),
         null_values(null_values),
         min_val(min_val), max_val(max_val),
-        ndv(ndv), histogram(nullptr),
+        ndv(ndv), histogram(json_gram),
         values_type(values_type){}
 
     // ~JsonBucket() {

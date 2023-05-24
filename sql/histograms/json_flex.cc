@@ -77,26 +77,6 @@ template<typename T>
 JsonGram<T> *JsonGram<T>::create_equigram(MEM_ROOT *mem_root) {
     return new (mem_root) JsonGram<T>{JFlexHistType::EQUI_HEIGHT, Mem_root_array<SingleBucket>(mem_root)};
 }
-template<typename T>
-JsonGram<T> *JsonGram<T>::create(MEM_ROOT *mem_root,
-                                JFlexHistType bucket_type) {
-  if (bucket_type == JFlexHistType::SINGLETON) {
-    // JsonGram<T>::Buckets buckets = Mem_root_array<SingleBucket>(mem_root);
-    // return new (mem_root) JsonGram<T>{bucket_type, buckets};
-    return new (mem_root) JsonGram<T>{bucket_type, Mem_root_array<SingleBucket>(mem_root)};
-    // return new (mem_root) JsonGram<T>{bucket_type, static_cast<JsonGram<T>::Buckets>(Mem_root_array<SingleBucket>(mem_root))};
-    // return new (mem_root) JsonGram<T>{bucket_type, Mem_root_array<SingleBucket>(mem_root)};
-    // buckets.single_bucks = Mem_root_array<SingleBucket>(mem_root);
-  } else {
-    // auto buckets = Mem_root_array<EquiBucket>(mem_root);
-    // return new (mem_root) JsonGram<T>{bucket_type, mem_root};
-    return new (mem_root) JsonGram<T>{bucket_type, Mem_root_array<EquiBucket>(mem_root)};
-    // return new (mem_root) JsonGram<T>{bucket_type, static_cast<JsonGram<T>::Buckets>(Mem_root_array<EquiBucket>(mem_root))};
-    // buckets.equi_bucks = Mem_root_array<EquiBucket>(mem_root);
-  }
-
-  // return new (mem_root) JsonGram<T>{bucket_type, buckets};
-}
 
 Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
                              bool *error)
@@ -121,21 +101,12 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
                       bucket.key_path.charset());
 
 
+    // Duplicate min/max data when strings
     maybe_primitive min_val_copy = bucket.min_val;
     maybe_primitive max_val_copy = bucket.max_val;
     if (bucket.values_type == BucketValueType::STRING) {
-      // Assuming that both min_val and max_val are legal strings
-
-      // Make copy of both min and max val strings
-      String min_string = (*min_val_copy)._string.to_string();
-      String max_string = (*max_val_copy)._string.to_string();
-      // Assume no OOM
-      String min_string_duped = String(min_string.dup(mem_root), min_string.length(), min_string.charset());
-      String max_string_duped = String(max_string.dup(mem_root), max_string.length(), max_string.charset());
-
-      // There may be an issue here where the dup is one byte longer because it includes \0 while the source string doesn't
-      (*min_val_copy)._string = BucketString::from_string(min_string_duped);
-      (*max_val_copy)._string = BucketString::from_string(max_string_duped);
+      (*min_val_copy)._string = BucketString::dupe(mem_root, (*min_val_copy)._string);
+      (*max_val_copy)._string = BucketString::dupe(mem_root, (*max_val_copy)._string);
 
       // Sanity checks
       {
@@ -143,23 +114,74 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
         assert((*min_val_copy)._string.m_ptr != (*bucket.min_val)._string.m_ptr);
         assert((*max_val_copy)._string.m_ptr != (*bucket.max_val)._string.m_ptr);
         // Check that string values are the same
-        min_string = String(min_string_duped.c_ptr(), (*min_val_copy)._string.m_length, (*min_val_copy)._string.m_charset);
-        max_string = String(max_string_duped.c_ptr(), (*max_val_copy)._string.m_length, (*max_val_copy)._string.m_charset);
-        String original_min_as_string = (*bucket.min_val)._string.to_string();
-        String original_max_as_string = (*bucket.max_val)._string.to_string();
-        assert(stringcmp(&min_string, &original_min_as_string) == 0);
-        assert(stringcmp(&max_string, &original_max_as_string) == 0);
+        
+        String min_cpy = (*min_val_copy)._string.to_string();
+        String max_cpy = (*max_val_copy)._string.to_string();
+        String min_original = (*bucket.min_val)._string.to_string();
+        String max_original = (*bucket.max_val)._string.to_string();
+        assert(stringcmp(&min_cpy, &min_original) == 0);
+        assert(stringcmp(&max_cpy, &max_original) == 0);
       }
     }
+    
 
+    // Duplicate histogram data
+    JsonGram<std::any> *json_gram = nullptr;
     if (bucket.histogram) {
-      // TODO: Duplicate histogram data
+        json_gram = bucket.histogram->copy_struct(mem_root, bucket.values_type);
+        if (json_gram->buckets_type == JFlexHistType::SINGLETON) {
+          const size_t num_buckets = bucket.histogram->m_buckets.single_bucks.size(); 
+          json_gram->m_buckets.single_bucks.reserve(num_buckets);
+          
+          // BucketString buckets are a special case, as the string they point to must also be copied
+          if (bucket.values_type == BucketValueType::STRING) {
+            const auto str_gram_from = std::any_cast<JsonGram<BucketString> *>(bucket.histogram);
+            auto *str_gram_into = std::any_cast<JsonGram<BucketString> *>(json_gram);
+            for (const auto &jg_buck : str_gram_from->m_buckets.single_bucks) {
+                BucketString bs;
+                if (jg_buck.value.dupe(mem_root, &bs)) {
+                  *error = true;
+                  return;
+                }
+
+                auto duped_bucket = JsonGram<BucketString>::SingleBucket{bs, jg_buck.frequency};
+                str_gram_into->m_buckets.single_bucks.push_back(duped_bucket);
+            }
+          } else {
+            // Other bucket types can simply be copied directly
+            for (const auto &jg_buck : bucket.histogram->m_buckets.single_bucks) {
+              json_gram->m_buckets.single_bucks.emplace_back(jg_buck);
+            }
+          }
+        } else {
+          const size_t num_buckets = bucket.histogram->m_buckets.equi_bucks.size(); 
+          json_gram->m_buckets.equi_bucks.reserve(num_buckets);
+          
+          if (bucket.values_type == BucketValueType::STRING) {
+            const auto str_gram_from = std::any_cast<JsonGram<BucketString> *>(bucket.histogram);
+            auto *str_gram_into = std::any_cast<JsonGram<BucketString> *>(json_gram);
+            for (const auto &jg_buck : str_gram_from->m_buckets.equi_bucks) {
+                BucketString bs;
+                if (jg_buck.upper_bound.dupe(mem_root, &bs)) {
+                  *error = true;
+                  return;
+                }
+
+                auto duped_bucket = JsonGram<BucketString>::EquiBucket{bs, jg_buck.frequency, jg_buck.ndv};
+                str_gram_into->m_buckets.equi_bucks.push_back(duped_bucket);
+            }
+          } else {
+            // Other bucket types can simply be copied directly
+            for (const auto &jg_buck : bucket.histogram->m_buckets.equi_bucks) {
+              json_gram->m_buckets.equi_bucks.emplace_back(jg_buck);
+            }
+          }
+        }
     }
 
     JsonBucket copy(string_dup, bucket.frequency, bucket.null_values,
                     min_val_copy, max_val_copy, bucket.ndv,
-                    bucket.values_type
-                  );
+                    bucket.values_type, json_gram);
 
     if (bucket.values_type != BucketValueType::UNKNOWN) {
       // If one of the optionals is included, the other should be as well
@@ -172,13 +194,28 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
         assert((*copy.max_val)._int == (*bucket.max_val)._int);
       }
 
-      // Either all optionals or none are included. So if min/max is in the bucket, ndv should be as well
-      assert(bucket.ndv && copy.ndv);
+
+      // Ndv should be in etiher both or none
+      assert(!bucket.ndv == !copy.ndv);
+      // If ndv is included, the value of original and copy should match. And min and max must be included
+      if (copy.ndv) {
+        assert(bucket.ndv == copy.ndv);
+        // If ndv is included, min and max vals should be as well
+        assert(copy.max_val && copy.min_val);
+      }
+
+      // None or both have histograms
+      assert(!bucket.histogram == !copy.histogram);
+      // If histogram is included, then ndv must be included
+      if (copy.histogram) {
+        assert(copy.ndv);
+      }
     } else {
       // If the value type is unknown, the optionals should not be set
       assert(!bucket.min_val && !bucket.max_val);
       assert(!copy.min_val && !copy.max_val);
       assert(!bucket.ndv && !copy.ndv);
+      assert(!bucket.histogram && !copy.histogram);
     }
 
     m_buckets.push_back(copy);
@@ -266,6 +303,8 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
     // Add NDV
     if (bucket.ndv) {
       if (add_value_json_bucket(*bucket.ndv, json_bucket)) return true;
+
+      // Add Histogram
       if (bucket.histogram) {
         // TODO
       }
@@ -498,6 +537,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       ndv_opt = ndv;
     }
 
+    JsonGram<std::any> *json_gram = nullptr;
     if (bucket->size() >= allowed_size_wo_opts + 4) {
       // GET SEVENTH BUCKET: JsonGram
       assert(values_type != BucketValueType::UNKNOWN);
@@ -515,7 +555,6 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         JFlexHistType::SINGLETON : JFlexHistType::EQUI_HEIGHT;
 
       // Create JsonGram. T is determined from values_type
-      JsonGram<std::any> *json_gram = nullptr;
       switch (values_type) {
         case BucketValueType::INT: {
           if (bucket_type == JFlexHistType::SINGLETON) {
@@ -582,7 +621,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     
 
     // STORE BUCKET IN HISTOGRAM
-    JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values, min_val_opt, max_val_opt, ndv_opt, values_type);
+    JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values, min_val_opt, max_val_opt, ndv_opt, values_type, json_gram);
     assert(m_buckets.capacity() > m_buckets.size());
     m_buckets.push_back(hist_bucket);
   }
