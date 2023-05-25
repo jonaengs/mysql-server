@@ -3,84 +3,84 @@
 --echo #########################################################################
 
 --echo # CREATE TABLE
-CREATE TABLE t(j json);
+CREATE TABLE region(jr json);
+
+
 --echo # INSERT DATA
-INSERT INTO t VALUES("[{\"objs\": [0, 1, 2, 3]}]");
-INSERT INTO t VALUES("[{\"objs\": [1, 2, 3, 0]}]");
-INSERT INTO t VALUES("[{\"objs\": [2, 3, 0, 1]}]");
-INSERT INTO t VALUES("[{\"objs\": [3, 0, 1, 2]}]");
-INSERT INTO t VALUES("{\"aakey\": \"bb\"}");
+INSERT INTO region VALUES('{"r_name": "AFRICA", "r_comment": "lar deposits.", "r_regionkey": 0}');
+INSERT INTO region VALUES('{"r_name": "AMERICA", "r_comment": "hs use ironic,", "r_regionkey": 1}');
+INSERT INTO region VALUES('{"r_name": "ASIA", "r_comment": "ges. thinly even", "r_regionkey": 2}');
+INSERT INTO region VALUES('{"r_name": "EUROPE", "r_comment": "ly final courts ", "r_regionkey": 3}');
+INSERT INTO region VALUES('{"r_name": "MIDDLE EAST", "r_comment": "uickly special", "r_regionkey": 4}');
 
-# ["base64:type254:MF9vYmoub2Jqc19hcnIuMF9udW0=", 0.4, 0.0, 0, 3, 4, {"type": "singleton", "buckets": [[0, 0.25], [1, 0.25]]}],
---echo  
---echo ATTEMPT SET JSON_FLEX ON STRING COLUMN
-ANALYZE TABLE t UPDATE HISTOGRAM ON j USING DATA 
-    -- Note: data-type must match data type of the column
-    '{"buckets": [
-        ["base64:type254:MF9vYmoub2Jqc19hcnIuMF9udW0=", 0.4, 0.0, 0, 3, 4, {"type": "equi-height", "buckets": [[0, 0.1, 1], [1, 0.1, 1]]}],
-        ["base64:type254:MF9vYmoub2Jqc19hcnIuMV9udW0=", 0.456, 0.0, 0, 3, 4],
-        ["base64:type254:YWFrZXlfc3Ry", 0.131313, 0.0, "base64:type254:YmI=", "base64:type254:YmI=", 1]
+
+
+ANALYZE TABLE region UPDATE HISTOGRAM ON jr 
+USING DATA '{
+  "buckets": [
+    [
+      "base64:type254:cl9yZWdpb25rZXk=",
+      1.0, 0.0
     ],
-    "histogram-type": "json-flex",
-    "data-type": "json",
-    "null-values": 0.0,
-    "last-updated": "2023-02-27 16:13:14.0",
-    "number-of-buckets-specified": 100,
-    "collation-id": 255,
-    "sampling-rate": 1.0}';
-
---echo # SHOW HISTOGRAM
-SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'j';
---echo # QUERY t
-# SELECT * FROM t;
-SET OPTIMIZER_TRACE = "enabled=on";
+    [
+      "base64:type254:cl9yZWdpb25rZXlfbnVt",
+      1.0, 0.0, 0, 4, 5,
+      {
+        "type": "singleton",
+        "buckets": [[0, 0.2],[1, 0.2],[2, 0.2],[3, 0.2],[4, 0.2]]
+      }
+    ],
+    [
+      "base64:type254:cl9uYW1l",
+      1.0, 0.0
+    ],
+    [
+      "base64:type254:cl9uYW1lX3N0cg==",
+      1.0, 0.0, "base64:type254:QUZSSUNB", "base64:type254:TUlERExFIEVBU1Q=", 5,
+      {
+        "type": "singleton",
+        "buckets": [["base64:type254:QUZSSUNB", 0.2], ["base64:type254:QU1FUklDQQ==", 0.2], ["base64:type254:QVNJQQ==", 0.2], ["base64:type254:RVVST1BF", 0.2], ["base64:type254:TUlERExFIEVBU1Q=", 0.2]]
+      }
+    ],
+    [
+      "base64:type254:cl9jb21tZW50",
+      1.0,
+      0.0
+    ],
+    [
+      "base64:type254:cl9jb21tZW50X3N0cg==",
+      1.0,
+      0.0,
+      "base64:type254:Z2VzLiB0aGlubHkgZXZlbiBwaW50byBiZWFucyBjYQ==",
+      "base64:type254:dWlja2x5IHNwZWNpYWwgYWNjb3VudHMgY2Fqb2xlIGNhcmVmdWxseSBibGl0aGVseSBjbG9zZSByZXF1ZXN0cy4gY2FyZWZ1bGx5IGZpbmFsIGFzeW1wdG90ZXMgaGFnZ2xlIGZ1cmlvdXNs",
+      5
+    ]
+  ],
+  "histogram-type": "json-flex",
+  "data-type": "json",
+  "null-values": 0.0,
+  "last-updated": "2023-02-27 16:13:14.0",
+  "number-of-buckets-specified": 1024,
+  "collation-id": 255,
+  "sampling-rate": 0.0
+}';
 
 
 --echo
 --echo 
+SELECT * FROM region;
 --echo 
-EXPLAIN SELECT * FROM t WHERE t.j->>"$[0].objs[0]" = 1;
+--echo 
+--echo 
+SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 'region' AND COLUMN_NAME = 'jr';
+SET OPTIMIZER_TRACE = "enabled=on";
+--echo 
+--echo 
+--echo 
+EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" = "ASIA";
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
 --echo 
 --echo 
-# TODO: FIGURE OUT WHY THE -1 QUERY ACTS SO WEIRD
-EXPLAIN SELECT * FROM t WHERE t.j->>"$[0].objs[0]" = -1;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM t WHERE t.j->>"$[0].objs[0]" = 4;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM t WHERE t.j->>"$[0].objs[1]" = 1000;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM t WHERE t.j->>"$[0].objs[1]" = 1;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM t WHERE t.j->>"$[2].objs[2]" = 0;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM t WHERE t.j->"$aakey" = 0;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM t WHERE t.j->>"$aakey" = "ccc";
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM t WHERE t.j->>"$aakey" = "bb";
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
+EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" = "ASIA" AND jr->>"$.r_regionkey" = 2;
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
