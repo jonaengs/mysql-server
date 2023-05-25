@@ -165,6 +165,7 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
         String max_original = (*bucket.max_val)._string.to_string();
         assert(stringcmp(&min_cpy, &min_original) == 0);
         assert(stringcmp(&max_cpy, &max_original) == 0);
+        assert(stringcmp(&min_original, &max_original) == stringcmp(&min_cpy, &max_cpy));
       }
     }
     
@@ -594,7 +595,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         String min_val_str;
         String max_val_str;
         if (extract_json_dom_value(min_val_dom, &min_val_str, context)) return true;
-        if (extract_json_dom_value(min_val_dom, &max_val_str, context)) return true;
+        if (extract_json_dom_value(max_val_dom, &max_val_str, context)) return true;
         min_val._string = BucketString::from_string(min_val_str);
         max_val._string = BucketString::from_string(max_val_str);
         values_type = BucketValueType::STRING;
@@ -918,6 +919,7 @@ outer_loop:
         builder.append("_str");
         break;
       }
+      // TODO: BOOL items. But there is not Item::Type::BOOL_ITEM, so how?
       // TODO: Do we handle json_memberof/json_contains arguments here?
       default: return true;
     }
