@@ -123,7 +123,7 @@ struct JsonGram {
   bool populate_json_array(Json_array *buckets_array);
   JsonGram<T> *duplicate_onto(MEM_ROOT *mem_root);
 
-  const char *get_type_string() {
+  const char *get_bucket_type_str() {
     return (buckets_type == JFlexHistType::SINGLETON) ? 
       singlebucket_str() : equibucket_str();
   }
