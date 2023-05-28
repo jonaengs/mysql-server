@@ -4954,6 +4954,24 @@ float Item_func_in::get_filtering_effect(THD *thd, table_map filter_for_table,
     */
     if (tmp_filt != COND_FILTER_ALLPASS)
       filter = min((arg_count - 1) * tmp_filt, in_max_filter);
+  } else if (args[0]->real_item()->type() == Item::FUNC_ITEM) {
+    // Same as case above, but for the case when the single column in wrapped in a json extract function
+    Item_func *func = static_cast<Item_func *>(args[0]->real_item());
+    const Item_field *fld = func->get_func_child_field();
+    
+    if (fld) {
+      histograms::enum_operator op =
+      (negated ? histograms::enum_operator::NOT_IN_LIST
+                : histograms::enum_operator::IN_LIST);
+
+      double selectivity;
+      if (!get_histogram_selectivity(thd, fld->field, args, arg_count,
+                                     op, this, fld->field->table->s,
+                                     &selectivity))
+        return static_cast<float>(selectivity);
+    }
+
+    
   }
 
   if (negated && filter != COND_FILTER_ALLPASS) filter = 1.0f - filter;

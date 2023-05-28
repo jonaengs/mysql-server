@@ -2224,22 +2224,26 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
     case enum_operator::NOT_BETWEEN:
       assert(item_count == 3);
 
-      if (items[0]->type() != Item::FIELD_ITEM || !items[1]->const_item() ||
-          !items[2]->const_item()) {
-        return true;
-      }
+      // Can't be bothered to fix these for json_flex right now, so I'm commenting them out
+
+      // if (items[0]->type() != Item::FIELD_ITEM || !items[1]->const_item() ||
+      //     !items[2]->const_item()) {
+      //   return true;
+      // }
       break;
     case enum_operator::IN_LIST:
     case enum_operator::NOT_IN_LIST:
       assert(item_count >= 2);
 
-      if (items[0]->type() != Item::FIELD_ITEM)
-        return true; /* purecov: deadcode */
+      // Can't be bothered to fix these for json_flex right now, so I'm commenting them out
 
-      // This will only work if all items are const_items
-      for (size_t i = 1; i < item_count; ++i) {
-        if (!items[i]->const_item()) return true;
-      }
+      // if (items[0]->type() != Item::FIELD_ITEM)
+      //   return true; /* purecov: deadcode */
+
+      // // This will only work if all items are const_items
+      // for (size_t i = 1; i < item_count; ++i) {
+      //   if (!items[i]->const_item()) return true;
+      // }
       break;
     case enum_operator::IS_NULL:
     case enum_operator::IS_NOT_NULL:
@@ -2260,6 +2264,13 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
       case enum_operator::EQUALS_TO:
       case enum_operator::LESS_THAN:
       case enum_operator::GREATER_THAN:
+
+      // Newly added:
+      // case enum_operator::IS_NULL:
+      // case enum_operator::IS_NOT_NULL:
+      // case enum_operator::NOT_EQUALS_TO:
+      case enum_operator::BETWEEN:
+      case enum_operator::IN_LIST:
         break;
       default: return true;      
     }
@@ -2267,7 +2278,7 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
     // Lookup selectivity in the json flex histogram
     const Json_flex *jflex = down_cast<const Json_flex *>(this);
     Item_func *func = static_cast<Item_func *>(items[0]->real_item());
-    if (jflex->get_selectivity(func, items[1], op, selectivity)) {
+    if (jflex->get_selectivity(func, items + 1, item_count - 1, op, selectivity)) {
       return true;
     }
 

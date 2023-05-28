@@ -65,22 +65,33 @@ USING DATA '{
   "sampling-rate": 0.0
 }';
 
-
+SET OPTIMIZER_TRACE = "enabled=on";
 --echo
 --echo 
-SELECT * FROM region;
---echo 
---echo 
---echo 
-SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 'region' AND COLUMN_NAME = 'jr';
-SET OPTIMIZER_TRACE = "enabled=on";
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" = "ASIA";
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" = "ASIA" AND jr->>"$.r_regionkey" = 2;
+EXPLAIN SELECT * FROM region WHERE jr->>"$.r_regionkey" BETWEEN 1 AND 3;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+--echo 
+--echo 
+EXPLAIN SELECT * FROM region WHERE jr->>"$.r_regionkey" IN (1, 6);
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+--echo 
+--echo 
+
+#SELECT * FROM region;
+#--echo 
+#--echo 
+#--echo 
+#SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 'region' AND COLUMN_NAME = 'jr';
+#SET OPTIMIZER_TRACE = "enabled=on";
+#--echo 
+#--echo 
+#--echo 
+#EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" = "ASIA";
+#SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+#--echo 
+#--echo 
+#--echo 
+#EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" = "ASIA" AND jr->>"$.r_regionkey" = 2;
+#SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;

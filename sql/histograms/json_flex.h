@@ -98,7 +98,6 @@ typedef std::optional<json_primitive> maybe_primitive;
 // Apologies for the terrible name
 template<typename T> 
 struct JsonGram {
-  // TODO: Rename this to JFlexHistType (or something like that) to avoid confusion with BucketValueType
   struct SingleBucket {
     T value;
     double frequency; // As a fraction of the total frequency of the key_path
@@ -186,7 +185,7 @@ struct JsonBucket {
   void *histogram;  // ptr to a JsonGram or a nullptr
 
   // Assigned at creation.
-  const BucketValueType values_type;
+  const BucketValueType values_type; // The type of the values contained in the bucket (min/max an in json_gram)
 
   JsonBucket(String key_path, double frequency, double null_values)
       : key_path(key_path), frequency(frequency),
@@ -289,14 +288,15 @@ class Json_flex : public Histogram {
 
   /**
   
-    @param func        The Item_func of the json function: JSON_EXTRACT, JSON_CONTAINS, ...
-    @param comparand   The argument to the function -- usually the compare value
-    @param op          The operator type
-    @param selectivity Double into which the found selectivity will be placed
+    @param func           The Item_func of the json function: JSON_EXTRACT, JSON_CONTAINS, ...
+    @param comparands     The argument(s) to the function -- usually the compare value. Operations like BETWEEN and IN_LIST pass several comparands
+    @param num_comparands The number of comparands -- the length of the array that comparands points to
+    @param op             The operator type
+    @param selectivity    Double into which the found selectivity will be placed
 
     TODO: consider making func have the Item_json_func type instead
   */
-  bool get_selectivity(Item_func *func, Item *comparand, enum_operator op, double *selectivity) const;
+  bool get_selectivity(Item_func *func, Item **comparands, size_t num_comparands, enum_operator op, double *selectivity) const;
 
 
   double get_equal_to_selectivity(const String &path) const;

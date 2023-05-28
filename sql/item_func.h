@@ -709,11 +709,13 @@ class Item_func : public Item_result_field {
       const MY_BITMAP *fields_to_ignore) const;
 
 
+public:
   /**
    Helper method for contributes_to_filter. 
+   Made public to use in item_cmpfunc as well.
   */
   Item_field* get_func_child_field();
-
+protected:
   /**
     Named parameters are allowed in a parameter list
 

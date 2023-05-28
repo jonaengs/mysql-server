@@ -738,7 +738,7 @@ double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_pat
     }
     default: {
       assert(false);
-      return 0.696969;
+      return 0;
     }
   }
 }
@@ -754,15 +754,99 @@ double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_pat
     case enum_operator::GREATER_THAN: {
       return jflex->get_greater_than_selectivity(arg_path);
     }
+    case enum_operator::BETWEEN: {
+      return 0.98765;
+    }
     default: {
       assert(false); 
-      return 0.696969;
+      return 0;
     }
   }
 }
 
+// Requires that only the permitted (i.e., handled in switch) operators are sent
+// And requires that all comparands are of the same type
+double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
+                            enum_operator op, Item **comparands, size_t comparand_count) {
+  switch(op) {
+    case enum_operator::BETWEEN: {
+      assert(comparand_count == 2);  // Pretty sure this is checked way before we get here, but I'm leaving it just in case
+      
+      switch(comparands[0]->type()) {
+        case Item::Type::INT_ITEM: {
+          // For now, assume that the smaller item always comes first
+          assert(comparands[0]->val_int() <= comparands[1]->val_int());
+          auto lower = jflex->get_less_than_selectivity(arg_path, comparands[0]->val_int());
+          auto upper = jflex->get_less_than_selectivity(arg_path, comparands[1]->val_int());
+          return upper - lower;
+        }
+        case Item::Type::REAL_ITEM: {
+          // For now, assume that the smaller item always comes first
+          assert(comparands[0]->val_real() <= comparands[1]->val_real());
+          auto lower = jflex->get_less_than_selectivity(arg_path, comparands[0]->val_real());
+          auto upper = jflex->get_less_than_selectivity(arg_path, comparands[1]->val_real());
+          return upper - lower;
+        }
+        default: {
+          // For now, assume only numbers in BETWEEN queires
+          assert(false);
+          return 0;
+        }
+      }
+    }
+
+    case enum_operator::IN_LIST: {
+      switch(comparands[0]->type()) {
+        case Item::Type::INT_ITEM: {
+          double sum = 0;
+          for (size_t i = 0; i < comparand_count; i++) {
+            sum += jflex->get_equal_to_selectivity(arg_path, comparands[i]->val_int());
+          }
+          return sum;
+        }
+        case Item::Type::STRING_ITEM: {
+          double sum = 0;
+          for (size_t i = 0; i < comparand_count; i++) {
+            StringBuffer<MAX_FIELD_WIDTH> str_buf(comparands[i]->collation.collation);
+            const String *str = comparands[i]->val_str(&str_buf);
+            const String truncated = str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+            sum += jflex->get_equal_to_selectivity(arg_path, truncated);
+          }
+          return sum;
+        }
+        default: {
+          // For now, assume no float or bool lists
+          assert(false);
+          return 0;
+        }
+      }
+    }
+
+    default: {
+      assert(false);
+      return 0;
+    }
+  }
+
+}
+
 // TODO: Handle bools as well
-bool Json_flex::get_selectivity(Item_func *func, Item *comparand, enum_operator op, double *selectivity) const {
+bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t comparand_count, enum_operator op, double *selectivity) const {
+  // Check comparands and comparand count
+  assert(comparand_count >= 1);
+  if (comparand_count > 1) {
+    for (size_t i = 1; i < comparand_count; i++) {
+      assert(comparands[i-1]->type() == comparands[i]->type());
+    }
+  }
+  if (comparand_count > 1) {
+    assert(op == enum_operator::BETWEEN 
+        || op == enum_operator::NOT_BETWEEN
+        || op == enum_operator::IN_LIST 
+        || op == enum_operator::NOT_IN_LIST);
+  }
+  
+  
   // Currently, we'll handle the JSON_EXTRACT function.
   // It takes a json_doc (simplifying assumption: a column), and a string path
 
@@ -791,7 +875,7 @@ bool Json_flex::get_selectivity(Item_func *func, Item *comparand, enum_operator 
   Item *json_path_arg = innermost_func->args[path_idx]->real_item();
   std::string path_builder("");
   if (
-    build_histogram_query_string(json_path_arg, comparand, json_unquote_called, path_builder)
+    build_histogram_query_string(json_path_arg, comparands[0], json_unquote_called, path_builder)
   ) return true;
   const String arg_path = String(path_builder.c_str(), path_builder.length(), m_charset);
 
@@ -799,32 +883,44 @@ bool Json_flex::get_selectivity(Item_func *func, Item *comparand, enum_operator 
   // If json_unquote was called, and the comparand is a const, 
   // then we know that we have an actual value that we can lookup in specifically
   // in the histogram data. Otherwise, we can only look up the generated query string.
-  bool comparand_is_const = comparand->const_item();
+  bool comparand_is_const = comparands[0]->const_item(); // Assume that if one of the items are const, then all are. This may not actually be the case (can you do "t1.col1 in (1, 2, t2.col2)"?).
   if (json_unquote_called && comparand_is_const) {
-    switch(comparand->type()) {
-      // TODO: Do we differentiate between doubles and floats??
-      case Item::Type::INT_ITEM: {
-        *selectivity = selectivity_getter_dispatch(this, arg_path, op, comparand->val_int());
-        break;
+    if (comparand_count > 1) {
+      *selectivity = multi_val_dispatch(this, arg_path, op, comparands, comparand_count);
+    } else {
+      auto comparand = comparands[0];
+      switch(comparand->type()) {
+        // TODO: Do we differentiate between doubles and floats??
+        case Item::Type::INT_ITEM: {
+          *selectivity = selectivity_getter_dispatch(this, arg_path, op, comparand->val_int());
+          break;
+        }
+        case Item::Type::REAL_ITEM: {
+          *selectivity = selectivity_getter_dispatch(this, arg_path, op, comparand->val_real());
+          break;
+        }
+        case Item::Type::STRING_ITEM: {
+          StringBuffer<MAX_FIELD_WIDTH> str_buf(comparand->collation.collation);
+          const String *str = comparand->val_str(&str_buf);
+          // Compare truncated version of string, just in case something ridiculously longs was passed
+          // In the future: all strings in histograms (excl. keypaths) will have a maximum length,
+          // and comparing beyond that length will not be allowed
+          const String truncated = str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+          *selectivity = selectivity_getter_dispatch<const String&>(this, arg_path, op, truncated);
+          break;
+        }
+        case Item::Type::NULL_ITEM: {
+          // TODO: Handle = NULL
+          // Will we have to handle >, =<, ... here?
+          assert(false);
+          return true;
+        }
+        default: {
+          // TODO: Remove asserts here. We shouldn't actually crash on unsupported data types
+          assert(false);
+          return true;
+        }
       }
-      case Item::Type::REAL_ITEM: {
-        *selectivity = selectivity_getter_dispatch(this, arg_path, op, comparand->val_real());
-        break;
-      }
-      case Item::Type::STRING_ITEM: {
-        StringBuffer<MAX_FIELD_WIDTH> str_buf(comparand->collation.collation);
-        const String *str = comparand->val_str(&str_buf);
-        const String truncated = str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
-        *selectivity = selectivity_getter_dispatch<const String&>(this, arg_path, op, truncated);
-        break;
-      }
-      case Item::Type::NULL_ITEM: {
-        // TODO: Handle = NULL
-        // Will we have to handle >, =<, ... here?
-        assert(false);
-        return true;
-      }
-      default: return true;
     }
   } else {
     *selectivity = selectivity_getter_dispatch(this, arg_path, op);
@@ -920,8 +1016,10 @@ outer_loop:
         break;
       }
       // TODO: BOOL items. But there is not Item::Type::BOOL_ITEM, so how?
-      // TODO: Do we handle json_memberof/json_contains arguments here?
-      default: return true;
+      default: {
+        assert(false);
+        return true;
+      }
     }
   } 
 
@@ -970,6 +1068,8 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const doub
           }
           cumulative += jg_buck.frequency;
         }
+        // In case the lookup value doesn't match anything stored in the histogram
+        return {0, cumulative * base_freq, (1 - cumulative) * base_freq};
       } else {
         for (const auto &jg_buck : histogram->m_buckets.equi_bucks) {
           cumulative += jg_buck.frequency;
@@ -981,6 +1081,8 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const doub
             };
           }
         }
+        // In case the lookup value doesn't match anything stored in the histogram
+        return {0, cumulative * base_freq, (1 - cumulative) * base_freq};
       }
     }
 
@@ -1088,6 +1190,13 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const long
   if (auto bucketOpt = find_bucket(path)) {
     const JsonBucket *bucket = *bucketOpt;
     double base_freq = bucket->frequency * (1.0 - bucket->null_values);
+
+    // If float and int have the same type identifier (key path type suffix), then it
+    // is possible that an integer comparand was used for a key path which actually holds float values
+    // In this case, we convert the comparand to float and lookup that value instead:
+    if (bucket->values_type == BucketValueType::FLOAT) {
+      return lookup_bucket(path, (double) cmp_val);
+    }
 
     // Check if cmp_val out of range of bucket values
     if (bucket->min_val && bucket->max_val) {
