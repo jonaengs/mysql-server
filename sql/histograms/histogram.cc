@@ -2167,7 +2167,7 @@ bool Histogram::get_selectivity(Item **items, size_t item_count,
   */
 
   // Allow 0 selectivity if all pages were sampled
-  const double minimum_selectivity = get_sampling_rate() >= 1.0 ? 0.0 : 0.001;
+  const double minimum_selectivity = get_sampling_rate() == 0.0 ? 0.0 : 0.001;
   *selectivity = std::max(*selectivity, minimum_selectivity);
   return false;
 }
@@ -2266,11 +2266,15 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
       case enum_operator::GREATER_THAN:
 
       // Newly added:
-      // case enum_operator::IS_NULL:
-      // case enum_operator::IS_NOT_NULL:
-      // case enum_operator::NOT_EQUALS_TO:
+      case enum_operator::LESS_THAN_OR_EQUAL:
+      case enum_operator::GREATER_THAN_OR_EQUAL:
       case enum_operator::BETWEEN:
       case enum_operator::IN_LIST:
+
+      // TODO:
+      // case enum_operator::NOT_EQUALS_TO:
+      // case enum_operator::IS_NULL:
+      // case enum_operator::IS_NOT_NULL:
         break;
       default: return true;      
     }
@@ -2286,6 +2290,8 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
       *selectivity * get_non_null_values_fraction(),
       0.0
     );
+    // In case this isn't checked further up the call-stack: Make sure we don't return anything greater than 1
+    *selectivity = std::min(1.0, *selectivity);
     return false;
   }
   assert(items[0]->type() == Item::FIELD_ITEM);

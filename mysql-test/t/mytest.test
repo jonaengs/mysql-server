@@ -68,7 +68,39 @@ USING DATA '{
 SET OPTIMIZER_TRACE = "enabled=on";
 --echo
 --echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.r_regionkey" BETWEEN 1 AND 3;
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_regionkey" BETWEEN 1 AND 3;
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo
+# --echo 
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_regionkey" BETWEEN 5 AND 10;
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo
+# --echo 
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "AFRICA" AND "MIDDLE EAST";
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo
+# --echo 
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MYDDLE EAST";
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+--echo 
+--echo 
+EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MEDDLE EAST";
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+--echo 
+--echo 
+EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EYROPE" AND "MEDDLE EAST";
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+--echo 
+--echo 
+EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EYROPE" AND "MIDDLE EAST";
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+--echo 
+--echo 
+EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MIDDLE EAST";
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
 --echo 

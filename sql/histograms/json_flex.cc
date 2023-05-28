@@ -724,42 +724,52 @@ Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {
   return json_flex;
 }
 
+
+// Eye-catching value that's returned from functions which return selectivity
+// and which shouldn't be able to fail but which somehow did fail.
+const double err_selectivity_val = 0.1337;
+
 template<typename T>
 double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_path, enum_operator op, T value) {
+  // For now, treat GT & GTE and LT & GTE the same
+  // Will obviously lead to errors in some cases, but the error is unlikely to be worse than 
+  // if we simply didn't support the GTE and LTE operations
   switch(op) {
     case enum_operator::EQUALS_TO: {
       return jflex->get_equal_to_selectivity(arg_path, value);
     }
+    case enum_operator::LESS_THAN_OR_EQUAL:
     case enum_operator::LESS_THAN: {
       return jflex->get_less_than_selectivity(arg_path, value);
     }
+    case enum_operator::GREATER_THAN_OR_EQUAL:
     case enum_operator::GREATER_THAN: {
       return jflex->get_greater_than_selectivity(arg_path, value);
     }
     default: {
       assert(false);
-      return 0;
+      return err_selectivity_val;
     }
   }
 }
 
 double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_path, enum_operator op) {
+  // For now, treat GT & GTE and LT & GTE the same
   switch(op) {
     case enum_operator::EQUALS_TO: {
       return jflex->get_equal_to_selectivity(arg_path);
     }
+    case enum_operator::LESS_THAN_OR_EQUAL:
     case enum_operator::LESS_THAN: {
       return jflex->get_less_than_selectivity(arg_path);
     }
+    case enum_operator::GREATER_THAN_OR_EQUAL:
     case enum_operator::GREATER_THAN: {
       return jflex->get_greater_than_selectivity(arg_path);
     }
-    case enum_operator::BETWEEN: {
-      return 0.98765;
-    }
     default: {
       assert(false); 
-      return 0;
+      return err_selectivity_val;
     }
   }
 }
@@ -770,32 +780,53 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
                             enum_operator op, Item **comparands, size_t comparand_count) {
   switch(op) {
     case enum_operator::BETWEEN: {
+      // Calculating BETWEEN (BETWEEN is inclusive in both ends):
+      // Sum everything outside the range (using lt and gt). Return 1 minus that sum.
+
       assert(comparand_count == 2);  // Pretty sure this is checked way before we get here, but I'm leaving it just in case
       
       switch(comparands[0]->type()) {
         case Item::Type::INT_ITEM: {
           // For now, assume that the smaller item always comes first
           assert(comparands[0]->val_int() <= comparands[1]->val_int());
-          auto lower = jflex->get_less_than_selectivity(arg_path, comparands[0]->val_int());
-          auto upper = jflex->get_less_than_selectivity(arg_path, comparands[1]->val_int());
-          return upper - lower;
+          auto below = jflex->get_less_than_selectivity(arg_path, comparands[0]->val_int());
+          auto above = jflex->get_greater_than_selectivity(arg_path, comparands[1]->val_int());
+          return 1 - (above + below);
         }
         case Item::Type::REAL_ITEM: {
           // For now, assume that the smaller item always comes first
           assert(comparands[0]->val_real() <= comparands[1]->val_real());
-          auto lower = jflex->get_less_than_selectivity(arg_path, comparands[0]->val_real());
-          auto upper = jflex->get_less_than_selectivity(arg_path, comparands[1]->val_real());
-          return upper - lower;
+          auto below = jflex->get_less_than_selectivity(arg_path, comparands[0]->val_real());
+          auto above = jflex->get_greater_than_selectivity(arg_path, comparands[1]->val_real());
+          return 1 - (above + below);
+        }
+        case Item::Type::STRING_ITEM: {
+          StringBuffer<MAX_FIELD_WIDTH> below_str_buf(comparands[0]->collation.collation);
+          const String *below_str = comparands[0]->val_str(&below_str_buf);
+          const String below_truncated = below_str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+          
+          StringBuffer<MAX_FIELD_WIDTH> above_str_buf(comparands[1]->collation.collation);
+          const String *above_str = comparands[1]->val_str(&above_str_buf);
+          const String above_truncated = above_str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+          
+          // For now, assume that the smaller item always comes first
+          assert(stringcmp(&below_truncated, &above_truncated) <= 0);
+          
+          auto below = jflex->get_less_than_selectivity(arg_path, below_truncated);
+          auto above = jflex->get_greater_than_selectivity(arg_path, above_truncated);
+          
+          return 1 - (above + below);
         }
         default: {
-          // For now, assume only numbers in BETWEEN queires
+          // Assume only numbers or strings in BETWEEN queries
           assert(false);
-          return 0;
+          return err_selectivity_val;
         }
       }
     }
-
     case enum_operator::IN_LIST: {
+      // Calculation is very simple: Sum up equality for every match
+      // Very inefficient if the list is large -- Can be done in a single lookup rather than |list| lookups
       switch(comparands[0]->type()) {
         case Item::Type::INT_ITEM: {
           double sum = 0;
@@ -817,20 +848,26 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
         default: {
           // For now, assume no float or bool lists
           assert(false);
-          return 0;
+          return err_selectivity_val;
         }
       }
     }
 
     default: {
       assert(false);
-      return 0;
+      return err_selectivity_val;
     }
   }
 
 }
 
-// TODO: Handle bools as well
+// Sets selectivity to some value probably within the range [0, 1].
+// Does not take into account the total null_values fraction for the column.
+// Does take into account the null_values fraction for the given key path.
+// So if the column is 25% null values, and the key_path is present in 50% of documents
+// and leads to null in 20% of cases, then the value 0.5 * (1 - 0.2) = 0.4 will be returned.
+// The caller will have to multiply with the column's null values fraction to get the final 
+// selectivity of (1 - 0.25) * 0.4 = 0.3.
 bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t comparand_count, enum_operator op, double *selectivity) const {
   // Check comparands and comparand count
   assert(comparand_count >= 1);
@@ -1035,6 +1072,11 @@ std::optional<const JsonBucket *> Json_flex::find_bucket(const String &path) con
   return std::nullopt;
 }
 
+// ughh
+template<>
+Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const longlong cmp_val) const;
+
+
 template<>
 Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const double cmp_val) const {
   if (auto bucketOpt = find_bucket(path)) {
@@ -1050,6 +1092,14 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const doub
       }
     }
 
+    // If lookup value is a float but the bucket is actually full of integers,
+    // and lookup value is a valid integer. Then we can do an integer lookup in the 
+    // bucket instead
+    // TODO: Should probably check that cmp_val is inside the range of a longlong
+    if (bucket->values_type == BucketValueType::INT && std::ceil(cmp_val) == cmp_val) {
+      return lookup_bucket(path, (longlong) cmp_val);
+    }
+
     // Lookup cmp_val in histogram
     // assumes histogram buckets are sorted in ascending order
     if (bucket->histogram) {
@@ -1063,13 +1113,22 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const doub
             return lookup_result{
               base_freq * jg_buck.frequency, 
               cumulative * base_freq, 
+              (1 - (cumulative + jg_buck.frequency)) * base_freq
+            };
+          } else if (jg_buck.value > cmp_val) {
+            // If buck_str > cmp_val, we should stop early.
+            // No vals eq the cmp_val. 
+            // As many less than this value as usual.
+            // The current bucket value is greater than cmp_val, so we don't add the current bucket's frequency to the greater than field
+            return lookup_result{
+              0, 
+              (cumulative) * base_freq, 
               (1 - cumulative) * base_freq
             };
           }
           cumulative += jg_buck.frequency;
         }
         // In case the lookup value doesn't match anything stored in the histogram
-        return {0, cumulative * base_freq, (1 - cumulative) * base_freq};
       } else {
         for (const auto &jg_buck : histogram->m_buckets.equi_bucks) {
           cumulative += jg_buck.frequency;
@@ -1077,12 +1136,11 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const doub
             return lookup_result{
               (base_freq * jg_buck.frequency) / jg_buck.ndv,
               cumulative * base_freq, 
-              (1 - cumulative) * base_freq
+              (1 - (cumulative + jg_buck.frequency)) * base_freq
             };
           }
         }
         // In case the lookup value doesn't match anything stored in the histogram
-        return {0, cumulative * base_freq, (1 - cumulative) * base_freq};
       }
     }
 
@@ -1120,13 +1178,21 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, String cmp
 
       double cumulative = 0;
       if (histogram->buckets_type == JFlexHistType::SINGLETON) {
+        // Singleton histograms for floats is pretty sussy, but ok
         for (const auto &jg_buck : histogram->m_buckets.single_bucks) {
           String buck_str = jg_buck.value.to_string();
-          // TODO: Stop early if buck_str > cmp_val
-          if (stringcmp(&buck_str, &cmp_val) == 0) {
+          auto cmp_result = stringcmp(&buck_str, &cmp_val);
+          if (cmp_result == 0) {
             return lookup_result{
               base_freq * jg_buck.frequency, 
               cumulative * base_freq, 
+              (1 - (cumulative + jg_buck.frequency)) * base_freq
+            };
+          } else if (cmp_result > 0) {
+            // If buck_str > cmp_val, stop early.
+            return lookup_result{
+              0, 
+              (cumulative) * base_freq, 
               (1 - cumulative) * base_freq
             };
           }
@@ -1221,6 +1287,12 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const long
             return lookup_result{
               base_freq * jg_buck.frequency, 
               cumulative * base_freq, 
+              (1 - (cumulative + jg_buck.frequency)) * base_freq
+            };
+          } else if (jg_buck.value > cmp_val) {
+            return lookup_result{
+              0, 
+              (cumulative) * base_freq, 
               (1 - cumulative) * base_freq
             };
           }
@@ -1233,11 +1305,12 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const long
             return lookup_result{
               (base_freq * jg_buck.frequency) / jg_buck.ndv,
               cumulative * base_freq, 
-              (1 - cumulative) * base_freq
+              (1 - (cumulative + jg_buck.frequency)) * base_freq
             };
           }
         }
       }
+      // If we didn't match in any values present in the histogram
     }
 
     // 
@@ -1285,11 +1358,11 @@ double Json_flex::get_equal_to_selectivity(const String &path) const {
 }
 
 double Json_flex::get_less_than_selectivity(const String &path) const {
-  return lookup_bucket(path).gt_frequency;
+  return lookup_bucket(path).lt_frequency;
 }
 
 double Json_flex::get_greater_than_selectivity(const String &path) const {
-  return lookup_bucket(path).lt_frequency;
+  return lookup_bucket(path).gt_frequency;
 }
 
 }  // namespace histograms
