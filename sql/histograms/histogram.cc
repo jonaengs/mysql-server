@@ -929,10 +929,18 @@ template <>
 bool Histogram::extract_json_dom_value(const Json_dom *json_dom, longlong *out,
                                        Error_context *context) {
   if (json_dom->json_type() != enum_json_type::J_INT) {
-    if (json_dom->json_type() == enum_json_type::J_UINT)
-      context->report_node(json_dom, Message::JSON_VALUE_OUT_OF_RANGE);
-    else
+    if (json_dom->json_type() == enum_json_type::J_UINT) {
+      const Json_uint* as_uint = down_cast<const Json_uint *>(json_dom);
+      if (as_uint->value() > (ulonglong) std::numeric_limits<longlong>::max()) {
+        context->report_node(json_dom, Message::JSON_VALUE_OUT_OF_RANGE);
+      } else {
+        *out = (longlong) as_uint->value();
+        return false;
+      }
+    }
+    else {
       context->report_node(json_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
+    }
 
     return true;
   }
