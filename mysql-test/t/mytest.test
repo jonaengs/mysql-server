@@ -19,8 +19,12 @@ ANALYZE TABLE region UPDATE HISTOGRAM ON jr
 USING DATA '{
   "buckets": [
     [
-      "base64:type254:cl9yZWdpb25rZXk=",
-      1.0, 0.0
+      "base64:type254:dHJ1bmNhdGVkX2Jvb2w=",
+      1.0,
+      0.0,
+      false,
+      false,
+      1
     ],
     [
       "base64:type254:cl9yZWdpb25rZXlfbnVt",

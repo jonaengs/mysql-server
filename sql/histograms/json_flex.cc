@@ -580,8 +580,8 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         if (extract_json_dom_value(max_val_dom, &(max_val._float), context)) return true;
         values_type = BucketValueType::FLOAT;
       } else if (min_val_dom->json_type() == enum_json_type::J_BOOLEAN) {
-        if (extract_json_dom_value(min_val_dom, &min_val._int, context)) return true;
-        if (extract_json_dom_value(max_val_dom, &max_val._int, context)) return true;
+        if (extract_json_dom_value(min_val_dom, &min_val._bool, context)) return true;
+        if (extract_json_dom_value(max_val_dom, &max_val._bool, context)) return true;
         values_type = BucketValueType::BOOL;
       }
       else if (min_val_dom->json_type() == enum_json_type::J_INT ||
