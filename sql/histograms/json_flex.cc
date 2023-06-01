@@ -102,6 +102,7 @@ JsonGram<BucketString> *JsonGram<BucketString>::duplicate_onto(MEM_ROOT *mem_roo
         dupe->m_buckets.equi_bucks.push_back(duped_bucket);
     }
   }
+  dupe->rest_mean_frequency = rest_mean_frequency;
   return dupe;
 }
 
@@ -391,6 +392,16 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
 
         // Add buckets array to object
         if (json_gram.add_clone(buckets_str(), &buckets_arr)) return true;
+
+        // Add mean rest frequency if set
+        auto *void_jgram = static_cast<JsonGram<void> *>(bucket.histogram);
+        if (void_jgram->rest_mean_frequency) {
+          const Json_double mean_frequency(*(void_jgram->rest_mean_frequency));
+          if (json_gram.add_clone(void_jgram->rest_frequency_string(), &mean_frequency)) {
+            return true;  
+          } 
+        }
+
         // Add json_gram to json bucket
         if (json_bucket->append_clone(&json_gram)) return true;
       }
@@ -694,6 +705,13 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
           return true;
         }
       }
+      const Json_dom *rest_frequency_dom = histogram_object->get(JsonGram<void>::rest_frequency_string());
+      if (rest_frequency_dom) {
+        // TODO: Proper err here
+        assert(rest_frequency_dom->json_type() == enum_json_type::J_DOUBLE);
+        const Json_double *rest_frequncy_json = down_cast<const Json_double *>(rest_frequency_dom);
+        static_cast<JsonGram<void> *>(json_gram)->rest_mean_frequency = rest_frequncy_json->value();
+      }
     }
     
 
@@ -803,17 +821,20 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
         case Item::Type::STRING_ITEM: {
           StringBuffer<MAX_FIELD_WIDTH> below_str_buf(comparands[0]->collation.collation);
           const String *below_str = comparands[0]->val_str(&below_str_buf);
-          const String below_truncated = below_str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+          // const String below_truncated = below_str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
           
           StringBuffer<MAX_FIELD_WIDTH> above_str_buf(comparands[1]->collation.collation);
           const String *above_str = comparands[1]->val_str(&above_str_buf);
-          const String above_truncated = above_str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+          // const String above_truncated = above_str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
           
           // For now, assume that the smaller item always comes first
-          assert(stringcmp(&below_truncated, &above_truncated) <= 0);
+          // assert(stringcmp(&below_truncated, &above_truncated) <= 0);
+          assert(stringcmp(below_str, above_str) <= 0);
           
-          auto below = jflex->get_less_than_selectivity(arg_path, below_truncated);
-          auto above = jflex->get_greater_than_selectivity(arg_path, above_truncated);
+          // auto below = jflex->get_less_than_selectivity(arg_path, below_truncated);
+          // auto above = jflex->get_greater_than_selectivity(arg_path, above_truncated);
+          auto below = jflex->get_less_than_selectivity(arg_path, *below_str);
+          auto above = jflex->get_greater_than_selectivity(arg_path, *above_str);
           
           return 1 - (above + below);
         }
@@ -839,9 +860,9 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
           double sum = 0;
           for (size_t i = 0; i < comparand_count; i++) {
             StringBuffer<MAX_FIELD_WIDTH> str_buf(comparands[i]->collation.collation);
-            const String *str = comparands[i]->val_str(&str_buf);
-            const String truncated = str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
-            sum += jflex->get_equal_to_selectivity(arg_path, truncated);
+            const String *str_val = comparands[i]->val_str(&str_buf);
+            // const String truncated = str_val->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+            sum += jflex->get_equal_to_selectivity(arg_path, *str_val);
           }
           return sum;
         }
@@ -929,6 +950,12 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
       switch(comparand->type()) {
         // TODO: Do we differentiate between doubles and floats??
         case Item::Type::INT_ITEM: {
+          // const Name_string *const name = &(comparand->item_name);
+          // if (name->is_set() && (name->eq("FALSE") || name->eq("TRUE"))) {
+          //   *selectivity = selectivity_getter_dispatch(this, arg_path, op, comparand->val_bool());
+          // } else {
+          //   *selectivity = selectivity_getter_dispatch(this, arg_path, op, comparand->val_int());
+          // }
           *selectivity = selectivity_getter_dispatch(this, arg_path, op, comparand->val_int());
           break;
         }
@@ -938,12 +965,13 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
         }
         case Item::Type::STRING_ITEM: {
           StringBuffer<MAX_FIELD_WIDTH> str_buf(comparand->collation.collation);
-          const String *str = comparand->val_str(&str_buf);
+          const String *str_val = comparand->val_str(&str_buf);
           // Compare truncated version of string, just in case something ridiculously longs was passed
           // In the future: all strings in histograms (excl. keypaths) will have a maximum length,
           // and comparing beyond that length will not be allowed
-          const String truncated = str->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
-          *selectivity = selectivity_getter_dispatch<const String&>(this, arg_path, op, truncated);
+          // const String truncated = str_val->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
+          // *selectivity = selectivity_getter_dispatch<String>(this, arg_path, op, truncated);
+          *selectivity = selectivity_getter_dispatch<String>(this, arg_path, op, *str_val);
           break;
         }
         case Item::Type::NULL_ITEM: {
@@ -951,6 +979,15 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
           // Will we have to handle >, =<, ... here?
           assert(false);
           return true;
+        }
+        case Item::Type::FUNC_ITEM: {
+          if (comparand->val_int() == 1 || comparand->val_int() == 0) {
+            *selectivity = selectivity_getter_dispatch(this, arg_path, op, comparand->val_bool());
+            break;
+          } else {
+            assert(false);
+            return true;
+          }
         }
         default: {
           // TODO: Remove asserts here. We shouldn't actually crash on unsupported data types
@@ -1037,10 +1074,16 @@ outer_loop:
   // If the JSON_VALUE is not called (i.e., -> is used instead of ->>), we can't use the type of of the comparand
   // and will have to lookup the key path for all terminal types. 
   if (arg_type_certain) {
-    // TODO: we can access the operands value here by using comparand->val_X(), where X is int, double, string
     switch(comparand->type()) {
       // TODO: Do we differentiate between doubles and floats??
       case Item::Type::INT_ITEM: {
+        // Apparently, bool items are not passed as INT?
+        // const Name_string *const name = &(comparand->item_name);
+        // if (name && name->is_set() && (name->eq("FALSE") || name->eq("TRUE"))) {
+        //   builder.append("_bool");
+        // } else {
+        //   builder.append("_num");
+        // }
         builder.append("_num");
         break;
       }
@@ -1052,7 +1095,21 @@ outer_loop:
         builder.append("_str");
         break;
       }
-      // TODO: BOOL items. But there is not Item::Type::BOOL_ITEM, so how?
+      case Item::Type::NULL_ITEM: {
+        // null does not get its own type suffix -- the null count is 
+        // put into the parent path, i.e., the key path shared between 
+        // all items before the type suffix is applied ("o_obj.id" vs. "o_obj.id_str" and "o_obj.id_num")
+        break;
+      }
+      case Item::Type::FUNC_ITEM: {
+        if (comparand->val_int() == 1 || comparand->val_int() == 0) {
+          builder.append("_bool");
+          break;
+        } else {
+          assert(false);
+          return true;
+        }
+      }
       default: {
         assert(false);
         return true;
@@ -1191,13 +1248,18 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, String cmp
           } else if (cmp_result > 0) {
             // If buck_str > cmp_val, stop early.
             return lookup_result{
-              0, 
+              histogram->rest_mean_frequency.value_or(0), 
               (cumulative) * base_freq, 
               (1 - cumulative) * base_freq
             };
           }
           cumulative += jg_buck.frequency;
         }
+        return lookup_result{
+          histogram->rest_mean_frequency.value_or(0), 
+          base_freq, 
+          0
+        };
       } else {
         assert(false); // No support for equi-height string histograms for now
       }
@@ -1341,7 +1403,20 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path) const {
 
 template<typename T>
 double Json_flex::get_equal_to_selectivity(const String &path, T cmp_val) const {
-  return lookup_bucket(path, cmp_val).eq_frequency;
+  if (find_bucket(path)) {
+    return lookup_bucket(path, cmp_val).eq_frequency;
+  } else {
+    // If we can't find a bucket for the given primitive path, we can try 
+    // to look for a bucket without the type suffix. It will have less information
+    // but it will still be better than nothing
+    
+    // This assumes that the functions which take cmp_val always take a path ending in a type suffix,
+    // which should hold true.
+    const String type_separator(TYPE_SEP.c_str(), TYPE_SEP.length(), m_charset);
+    const int sep_offset = path.strrstr(type_separator, path.length());
+    const String without_suffix = path.substr(0, sep_offset);
+    return lookup_bucket(without_suffix).eq_frequency;
+  }
 }
 
 template<typename T>

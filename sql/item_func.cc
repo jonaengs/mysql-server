@@ -927,6 +927,20 @@ const Item_field *Item_func::contributes_to_filter(
     available value. arg_count==1 for Items with implicit values like
     "field IS NULL".
   */
+
+
+  // i_have_no_idea_what_im_doing_computer_dog.jpeg
+  if (arg_count == 2) {    
+    const Item::Type arg_1_type = args[0]->real_item()->type();
+    if (arg_1_type == Item::FUNC_ITEM ) {
+      Item_func *func = static_cast<Item_func *>(args[0]->real_item());
+      Item_field *fld = func->get_func_child_field();
+      if (fld) {
+        return fld;
+      }
+    }
+  }
+
   bool found_comparable = (arg_count == 1);
 
   for (uint i = 0; i < arg_count; i++) {
@@ -981,9 +995,7 @@ const Item_field *Item_func::contributes_to_filter(
     }  // if field.
     // else if (arg_type == Item::FUNC_ITEM && (used_tabs == filter_for_table)) {
     else if (arg_type == Item::FUNC_ITEM ) {
-      // Take the child of the func item and return it as the field
-      // THIS IS BAD CODE. JUST HERE TO TEMPORARILY MAKE THINGS WORK.
-      // ALSO: i_have_no_idea_what_im_doing_computer_dog.jpeg
+      // TODO: Remove this. Leaving it for now to reduce chance of breaking something
       
       Item_func *func = static_cast<Item_func *>(args[i]->real_item());
       Item_field *fld = func->get_func_child_field();

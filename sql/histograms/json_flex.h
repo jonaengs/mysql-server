@@ -84,6 +84,8 @@ struct BucketString {
   }
 };
 
+
+// TODO: Change from 'longlong' to int64_t
 union json_primitive {
   double _float;
   longlong _int; // May lead to trouble when/if a longlong can't accommodate the same range as a json int (double) can.
@@ -114,6 +116,17 @@ struct JsonGram {
 
   JFlexHistType buckets_type;
   Buckets m_buckets;
+  // rest_mean_frequency is used in conjunction with Singleton buckets when there are more items than the singleton can hold,
+  // but an equi-height cannot be used (basically, for strings).
+  // It is useful for things like lists of enum strings, where some enums are super common, while 
+  // a majority of enum values appears very infrequently. Additionally, queries are unlikely 
+  // to match  against strings which do not appear in the data.
+  // For example, in the twitter data set ("test" - 20k docs), the key-path source_str has ndv 37, but 
+  // one of those values has a frequency of 90, while another has a frequency 8. The remaining strings have
+  // a combined frequency of 2. In this case, we store those two most frequent strings in the singleton histogram
+  // and then store the mean frequency of the remaining items: 0.02/35 = 0.0006.
+  // This field holds the mean frequency of the items not included in the singleton histogram.
+  std::optional<double> rest_mean_frequency = std::nullopt;
 
   // creation functions assume no OOM. Caller can check for null pointer
   static JsonGram<T>* create_singlegram(MEM_ROOT *mem_root);
@@ -155,6 +168,7 @@ struct JsonGram {
   static constexpr const char *singlebucket_str() { return "singleton"; }
   static constexpr const char *equibucket_str() { return "equi-height"; }
   static constexpr const char *type_str() { return "type"; }
+  static constexpr const char *rest_frequency_string() { return "rest_frequency"; }
 };
 
 // union anygram {

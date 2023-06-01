@@ -19,12 +19,49 @@ ANALYZE TABLE region UPDATE HISTOGRAM ON jr
 USING DATA '{
   "buckets": [
     [
+      "base64:type254:aXNfYm9vbA==",
+      1.0,
+      0.0,
+      false,
+      true,
+      2,
+      {
+        "type": "singleton",
+        "buckets": [
+          [false, 0.03],
+          [true, 0.97]
+        ]
+      }
+    ],
+    [
       "base64:type254:aWRfbnVt",
       1.0,
       0.0,
       421040281296052225,
       433266515216179202,
       21285
+    ],
+    [
+      "base64:type254:c291cmNlX3N0cg==",
+      1.0,
+      0.0,
+      "base64:type254:PGEgaHJlZj0iaHR0cDovL2JlZ3dhcmUuYml6IiByZWw9Im5vZm9sbG93Ij5iZWdSZXR3ZWV0PC9hPg==",
+      "base64:type254:d2Vi",
+      37,
+      {
+        "type": "singleton",
+        "buckets": [
+          [
+            "base64:type254:PGEgaHJlZj0iaHR0cDovL3d3dy5hcHBsZS5jb20iIHJlbD0ibm9mb2xsb3ciPmlPUzwvYT4=",
+            0.8906272022551093
+          ],
+          [
+            "base64:type254:PGEgaHJlZj0iaHR0cDovL2l0dW5lcy5hcHBsZS5jb20vdXMvYXBwL2ltZGItbW92aWVzLXR2L2lkMzQyNzkyNTI1P210PTgmdW89NCIgcmVsPSJub2ZvbGxvdyI+SU1EYiBNb3ZpZXMgJiBUViBvbiBpT1M8L2E+",
+            0.08531829927178765
+          ]
+        ],
+        "rest_frequency": 0.0006872713849458036
+      }
     ],
     [
       "base64:type254:dHJ1bmNhdGVkX2Jvb2w=",
@@ -39,7 +76,8 @@ USING DATA '{
       1.0, 0.0, 0, 4, 5,
       {
         "type": "singleton",
-        "buckets": [[0, 0.2],[1, 0.2],[2, 0.2],[3, 0.2],[4, 0.2]]
+        "buckets": [[0, 0.2],[1, 0.2],[2, 0.2],[3, 0.2],[4, 0.2]],
+        "rest_frequency": 0.01
       }
     ],
     [
@@ -94,30 +132,49 @@ SET OPTIMIZER_TRACE = "enabled=on";
 # --echo 
 # EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MYDDLE EAST";
 # SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo 
+# --echo 
+# --echo 
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MEDDLE EAST";
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo 
+# --echo 
+# --echo 
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EYROPE" AND "MEDDLE EAST";
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo 
+# --echo 
+# --echo 
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EYROPE" AND "MIDDLE EAST";
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo 
+# --echo 
+# --echo 
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MIDDLE EAST";
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo 
+# --echo 
+# --echo 
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_regionkey" IN (1, 6);
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo 
+# --echo 
+# --echo 
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.source" = "<a href=\"http://www.apple.com\" rel=\"nofollow\">iOS</a>";
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo 
+# EXPLAIN SELECT * FROM region WHERE jr->>"$.source" = "asdasd";
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
 --echo 
 --echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MEDDLE EAST";
+EXPLAIN SELECT * FROM region WHERE jr->>"$.is" = TRUE;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EYROPE" AND "MEDDLE EAST";
+EXPLAIN SELECT * FROM region WHERE jr->>"$.is" IS TRUE;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EYROPE" AND "MIDDLE EAST";
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MIDDLE EAST";
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.r_regionkey" IN (1, 6);
+EXPLAIN SELECT * FROM region WHERE jr->>"$.is" = FALSE;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
 --echo 
@@ -128,7 +185,6 @@ SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIM
 #--echo 
 #--echo 
 #SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 'region' AND COLUMN_NAME = 'jr';
-#SET OPTIMIZER_TRACE = "enabled=on";
 #--echo 
 #--echo 
 #--echo 
