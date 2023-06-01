@@ -3,107 +3,51 @@
 --echo #########################################################################
 
 --echo # CREATE TABLE
-CREATE TABLE region(jr json);
+CREATE TABLE twitter(j JSON);
 
 
 --echo # INSERT DATA
-INSERT INTO region VALUES('{"r_name": "AFRICA", "r_comment": "lar deposits.", "r_regionkey": 0}');
-INSERT INTO region VALUES('{"r_name": "AMERICA", "r_comment": "hs use ironic,", "r_regionkey": 1}');
-INSERT INTO region VALUES('{"r_name": "ASIA", "r_comment": "ges. thinly even", "r_regionkey": 2}');
-INSERT INTO region VALUES('{"r_name": "EUROPE", "r_comment": "ly final courts ", "r_regionkey": 3}');
-INSERT INTO region VALUES('{"r_name": "MIDDLE EAST", "r_comment": "uickly special", "r_regionkey": 4}');
+INSERT INTO twitter VALUES('{"user": {"followers_count": 10}}');
 
 
 
-ANALYZE TABLE region UPDATE HISTOGRAM ON jr 
+ANALYZE TABLE twitter UPDATE HISTOGRAM ON j
 USING DATA '{
   "buckets": [
     [
-      "base64:type254:aXNfYm9vbA==",
-      1.0,
-      0.0,
-      false,
-      true,
-      2,
+      "base64:type254:dXNlcl9vYmouZm9sbG93ZXJzX2NvdW50X251bQ==",
+      1.0, 0.0,
+      0, 152834, 1736,
       {
-        "type": "singleton",
+        "type": "equi-height",
         "buckets": [
-          [false, 0.03],
-          [true, 0.97]
+          [13, 0.041061780596664314, 14],
+          [22, 0.04388066713648109, 9],
+          [31, 0.042142353770260745, 9],
+          [39, 0.0411087620389946, 8],
+          [49, 0.0447733145407564, 10],
+          [57, 0.044538407329105, 8],
+          [69, 0.04007517030772845, 12],
+          [82, 0.040310077519379844, 13],
+          [99, 0.04148461357763683, 17],
+          [119, 0.044538407329105, 20],
+          [136, 0.041531595019967116, 17],
+          [156, 0.040498003288700964, 20],
+          [179, 0.040122151750058725, 23],
+          [202, 0.04040404040404041, 23],
+          [232, 0.04054498473103124, 30],
+          [265, 0.04059196617336152, 33],
+          [302, 0.04068592905802208, 37],
+          [343, 0.040498003288700964, 41],
+          [413, 0.040638947615691805, 70],
+          [497, 0.040498003288700964, 83],
+          [632, 0.040169133192389, 130],
+          [877, 0.040169133192389, 195],
+          [1353, 0.04002818886539817, 291],
+          [4904, 0.04007517030772845, 463],
+          [152834, 0.009631195677707306, 160]
         ]
       }
-    ],
-    [
-      "base64:type254:aWRfbnVt",
-      1.0,
-      0.0,
-      421040281296052225,
-      433266515216179202,
-      21285
-    ],
-    [
-      "base64:type254:c291cmNlX3N0cg==",
-      1.0,
-      0.0,
-      "base64:type254:PGEgaHJlZj0iaHR0cDovL2JlZ3dhcmUuYml6IiByZWw9Im5vZm9sbG93Ij5iZWdSZXR3ZWV0PC9hPg==",
-      "base64:type254:d2Vi",
-      37,
-      {
-        "type": "singleton",
-        "buckets": [
-          [
-            "base64:type254:PGEgaHJlZj0iaHR0cDovL3d3dy5hcHBsZS5jb20iIHJlbD0ibm9mb2xsb3ciPmlPUzwvYT4=",
-            0.8906272022551093
-          ],
-          [
-            "base64:type254:PGEgaHJlZj0iaHR0cDovL2l0dW5lcy5hcHBsZS5jb20vdXMvYXBwL2ltZGItbW92aWVzLXR2L2lkMzQyNzkyNTI1P210PTgmdW89NCIgcmVsPSJub2ZvbGxvdyI+SU1EYiBNb3ZpZXMgJiBUViBvbiBpT1M8L2E+",
-            0.08531829927178765
-          ]
-        ],
-        "rest_frequency": 0.0006872713849458036
-      }
-    ],
-    [
-      "base64:type254:dHJ1bmNhdGVkX2Jvb2w=",
-      1.0,
-      0.0,
-      false,
-      false,
-      1
-    ],
-    [
-      "base64:type254:cl9yZWdpb25rZXlfbnVt",
-      1.0, 0.0, 0, 4, 5,
-      {
-        "type": "singleton",
-        "buckets": [[0, 0.2],[1, 0.2],[2, 0.2],[3, 0.2],[4, 0.2]],
-        "rest_frequency": 0.01
-      }
-    ],
-    [
-      "base64:type254:cl9uYW1l",
-      1.0, 0.0
-    ],
-    [
-      "base64:type254:cl9uYW1lX3N0cg==",
-      1.0, 0.0, "base64:type254:QUZSSUNB", "base64:type254:TUlERExFIEVBU1Q=", 5,
-      {
-        "type": "singleton",
-        "buckets": [["base64:type254:QUZSSUNB", 0.2], ["base64:type254:QU1FUklDQQ==", 0.2], ["base64:type254:QVNJQQ==", 0.2], ["base64:type254:RVVST1BF", 0.2], ["base64:type254:TUlERExFIEVBU1Q=", 0.2]]
-      }
-    ],
-    [
-      "base64:type254:cl9jb21tZW50",
-      1.0,
-      0.0
-    ],
-    [
-      "base64:type254:cl9jb21tZW50X3N0cg==",
-      1.0,
-      0.0,
-      "base64:type254:Z2VzLiB0aGlubHkgZXZlbiBwaW50byBiZWFucyBjYQ==",
-      "base64:type254:dWlja2x5IHNwZWNpYWwgYWNjb3VudHMgY2Fqb2xlIGNhcmVmdWxseSBibGl0aGVseSBjbG9zZSByZXF1ZXN0cy4gY2FyZWZ1bGx5IGZpbmFsIGFzeW1wdG90ZXMgaGFnZ2xlIGZ1cmlvdXNs",
-      5
     ]
   ],
   "histogram-type": "json-flex",
@@ -115,83 +59,10 @@ USING DATA '{
   "sampling-rate": 0.0
 }';
 
+# SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 'twitter' AND COLUMN_NAME = 'j';
 SET OPTIMIZER_TRACE = "enabled=on";
 --echo
 --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_regionkey" BETWEEN 1 AND 3;
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo
-# --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_regionkey" BETWEEN 5 AND 10;
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo
-# --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "AFRICA" AND "MIDDLE EAST";
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo
-# --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MYDDLE EAST";
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo 
-# --echo 
-# --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MEDDLE EAST";
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo 
-# --echo 
-# --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EYROPE" AND "MEDDLE EAST";
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo 
-# --echo 
-# --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EYROPE" AND "MIDDLE EAST";
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo 
-# --echo 
-# --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" BETWEEN "EUROPE" AND "MIDDLE EAST";
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo 
-# --echo 
-# --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.r_regionkey" IN (1, 6);
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo 
-# --echo 
-# --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.source" = "<a href=\"http://www.apple.com\" rel=\"nofollow\">iOS</a>";
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo 
-# EXPLAIN SELECT * FROM region WHERE jr->>"$.source" = "asdasd";
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
---echo 
---echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.is" = TRUE;
+EXPLAIN SELECT * FROM twitter WHERE j->>"$user.followers_count" > 10;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.is" IS TRUE;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
-EXPLAIN SELECT * FROM region WHERE jr->>"$.is" = FALSE;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
---echo 
-
-#SELECT * FROM region;
-#--echo 
-#--echo 
-#--echo 
-#SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 'region' AND COLUMN_NAME = 'jr';
-#--echo 
-#--echo 
-#--echo 
-#EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" = "ASIA";
-#SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect[0][0][0].histogram_selectivity") AS SELECTIVITY FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-#--echo 
-#--echo 
-#--echo 
-#EXPLAIN SELECT * FROM region WHERE jr->>"$.r_name" = "ASIA" AND jr->>"$.r_regionkey" = 2;
-#SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;

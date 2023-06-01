@@ -1058,13 +1058,15 @@ outer_loop:
         }
       }
 
-      // Append type information to previous key, if one exists
-      if (builder.size() > 0) {
-          builder.append(TYPE_SEP);
-          builder.append("obj");
-          builder.append(KEY_SEP);
-      }
+      // Append key
       builder.append(std::string(iterator_start, iterator_end));
+
+      // If we found a dot, we know that the key is object type
+      if (*iterator_end == '.') {
+        builder.append(TYPE_SEP);
+        builder.append("obj");
+        builder.append(KEY_SEP);
+      }
     }
     // if (iterator_end != str.end()) builder.append(KEY_SEP);
     iterator_start = iterator_end;
