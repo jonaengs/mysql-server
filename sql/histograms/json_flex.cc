@@ -756,6 +756,9 @@ double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_pat
     case enum_operator::EQUALS_TO: {
       return jflex->get_equal_to_selectivity(arg_path, value);
     }
+    case enum_operator::NOT_EQUALS_TO: {
+      return jflex->get_not_equal_to_selectivity(arg_path, value);
+    }
     case enum_operator::LESS_THAN_OR_EQUAL:
     case enum_operator::LESS_THAN: {
       return jflex->get_less_than_selectivity(arg_path, value);
@@ -774,6 +777,9 @@ double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_pat
 double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_path, enum_operator op) {
   // For now, treat GT & GTE and LT & GTE the same
   switch(op) {
+    case enum_operator::NOT_EQUALS_TO: {
+      return jflex->get_not_equal_to_selectivity(arg_path);
+    }
     case enum_operator::EQUALS_TO: {
       return jflex->get_equal_to_selectivity(arg_path);
     }
@@ -1407,6 +1413,16 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path) const {
 }
 
 template<typename T>
+double Json_flex::get_not_equal_to_selectivity(const String &path, T cmp_val) const {
+  if (auto bucketOpt = find_bucket(path)) {
+    double eq_freq = lookup_bucket(path, cmp_val).eq_frequency;
+    auto bucket = *bucketOpt;
+    return (bucket->frequency * (1 - bucket->null_values)) - eq_freq;
+  }
+  return min_frequency * 0.9;
+}
+
+template<typename T>
 double Json_flex::get_equal_to_selectivity(const String &path, T cmp_val) const {
   if (find_bucket(path)) {
     return lookup_bucket(path, cmp_val).eq_frequency;
@@ -1431,6 +1447,15 @@ double Json_flex::get_less_than_selectivity(const String &path, T cmp_val) const
 template<typename T>
 double Json_flex::get_greater_than_selectivity(const String &path, T cmp_val) const {
   return lookup_bucket(path, cmp_val).gt_frequency;
+}
+
+double Json_flex::get_not_equal_to_selectivity(const String &path) const {
+  if (auto bucketOpt = find_bucket(path)) {
+    double eq_freq = lookup_bucket(path).eq_frequency;
+    auto bucket = *bucketOpt;
+    return (bucket->frequency * (1 - bucket->null_values)) - eq_freq;
+  }
+  return min_frequency * 0.9;
 }
 
 double Json_flex::get_equal_to_selectivity(const String &path) const {
