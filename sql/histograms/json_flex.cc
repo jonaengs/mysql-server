@@ -926,7 +926,6 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
 // selectivity of (1 - 0.25) * 0.4 = 0.3.
 bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t comparand_count, enum_operator op, double *selectivity) const {
   // Check comparands and comparand count
-  assert(comparand_count >= 1);
   if (comparand_count > 1) {
     for (size_t i = 1; i < comparand_count; i++) {
       assert(comparands[i-1]->type() == comparands[i]->type());
@@ -937,6 +936,10 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
         || op == enum_operator::NOT_BETWEEN
         || op == enum_operator::IN_LIST 
         || op == enum_operator::NOT_IN_LIST);
+  }
+  if (comparand_count == 0) {
+    assert(op == enum_operator::IS_NULL 
+      || op == enum_operator::IS_NOT_NULL);
   }
   
   
@@ -968,16 +971,33 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
   Item *json_path_arg = innermost_func->args[path_idx]->real_item();
   std::string path_builder("");
   if (
-    build_histogram_query_string(json_path_arg, comparands[0], json_unquote_called, path_builder)
+    auto qstring_example_comparand = comparand_count > 0 ? comparands[0] : nullptr;
+    build_histogram_query_string(json_path_arg, qstring_example_comparand, 
+                                 json_unquote_called, path_builder)
   ) return true;
   const String arg_path = String(path_builder.c_str(), path_builder.length(), m_charset);
 
 
+  if (comparand_count == 0) {
+    // IS NULL checks whether the path exists and leads to a null value
+    // IS NOT NULL checks whether the path exists and does not lead to a null value
+    switch (op) {
+      case enum_operator::IS_NULL:
+        *selectivity = get_eq_null_selectivity(arg_path);
+        break;
+      case enum_operator::IS_NOT_NULL:
+        *selectivity = get_not_eq_null_selectivity(arg_path);
+        break;
+      default:
+        assert(false);
+        return true;
+    }
+
   // If json_unquote was called, and the comparand is a const, 
   // then we know that we have an actual value that we can lookup in specifically
   // in the histogram data. Otherwise, we can only look up the generated query string.
-  bool comparand_is_const = comparands[0]->const_item(); // Assume that if one of the items are const, then all are. This may not actually be the case (can you do "t1.col1 in (1, 2, t2.col2)"?).
-  if (json_unquote_called && comparand_is_const) {
+  } else if (json_unquote_called && comparands[0]->const_item()) {
+    // Assume that if one of the items are const, then all are. This may not actually be the case (can you do "t1.col1 in (1, 2, t2.col2)"?).
     if (comparand_count > 1) {
       *selectivity = multi_val_dispatch(this, arg_path, op, comparands, comparand_count);
     } else {
@@ -1010,21 +1030,8 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
           break;
         }
         case Item::Type::NULL_ITEM: {
-          // EQUAL TO NULL checks whether the path exists and leads to a null value
-          // NOT EQUALS TO NULL checks whether the path exists and does not lead to a null value
-          // IS NULL <=> NOT EXISTS
-          switch (op) {
-            case enum_operator::EQUALS_TO:
-              *selectivity = get_eq_null_selectivity(arg_path);
-              break;
-            case enum_operator::NOT_EQUALS_TO:
-              *selectivity = get_not_eq_null_selectivity(arg_path);
-              break;
-            default:
-              assert(false);
-              return true;
-          }
-          break;
+          assert(false);
+          return true;
         }
         case Item::Type::FUNC_ITEM: {
           if (comparand->val_int() == 1 || comparand->val_int() == 0) {
@@ -1121,7 +1128,8 @@ outer_loop:
 
   // If the JSON_VALUE is not called (i.e., -> is used instead of ->>), we can't use the type of of the comparand
   // and will have to lookup the key path for all terminal types. 
-  if (arg_type_certain) {
+  // This check will also skip IS_NULL type queries. Null values do not get a suffix anyway.
+  if (comparand && arg_type_certain) {
     switch(comparand->type()) {
       // TODO: Do we differentiate between doubles and floats??
       case Item::Type::INT_ITEM: {
@@ -1141,12 +1149,6 @@ outer_loop:
       }
       case Item::Type::STRING_ITEM: {
         builder.append("_str");
-        break;
-      }
-      case Item::Type::NULL_ITEM: {
-        // null does not get its own type suffix -- the null count is 
-        // put into the parent path, i.e., the key path shared between 
-        // all items before the type suffix is applied ("o_obj.id" vs. "o_obj.id_str" and "o_obj.id_num")
         break;
       }
       case Item::Type::FUNC_ITEM: {

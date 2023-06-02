@@ -58,39 +58,39 @@ SET OPTIMIZER_TRACE = "enabled=on";
 # EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.verified" = FALSE;
 # SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
---echo
+# --echo
+# --echo 
+# --echo 
+# EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.followers_count" > 5000;
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# 
+# --echo
+# --echo
+# --echo 
+# EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.followers_count" < 5000;
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# 
+# --echo
+# --echo
+# --echo 
+# EXPLAIN SELECT * FROM twitter WHERE j->>"$.*.verified" <> FALSE;
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# EXPLAIN SELECT * FROM twitter WHERE j->>"$.**.verified" <> TRUE;
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# 
+# --echo
+# --echo
+# --echo 
+# EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" IN ("GB", "US", "CA", "AU", "NZ", "IE");
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+# --echo 
+# --echo 
+# EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" NOT IN ("GB", "US", "CA", "AU", "NZ", "IE");
+# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
---echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.followers_count" > 5000;
+EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" IS NOT NULL;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-
---echo
---echo
 --echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.followers_count" < 5000;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-
---echo
---echo
---echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.*.verified" <> FALSE;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.**.verified" <> TRUE;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-
---echo
---echo
---echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" IN ("GB", "US", "CA", "AU", "NZ", "IE");
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" NOT IN ("GB", "US", "CA", "AU", "NZ", "IE");
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" <> NULL;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" = NULL;
+EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" IS NULL;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 

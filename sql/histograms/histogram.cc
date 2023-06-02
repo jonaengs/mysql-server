@@ -2256,7 +2256,7 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
     case enum_operator::IS_NULL:
     case enum_operator::IS_NOT_NULL:
       assert(item_count == 1);
-      if (items[0]->type() != Item::FIELD_ITEM) return true;
+      if (items[0]->type() != Item::FIELD_ITEM && items[0]->type() != Item::FUNC_ITEM) return true;
   }
 
   // Handle *all* selectivity estimation for JSON_FLEX in this block
@@ -2281,9 +2281,9 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
       
       case enum_operator::NOT_EQUALS_TO:
       case enum_operator::NOT_IN_LIST:
+      case enum_operator::IS_NULL:
+      case enum_operator::IS_NOT_NULL:
 
-      // TODO:
-      // case enum_operator::IS_NOT_NULL:
         break;
       default: return true;      
     }
