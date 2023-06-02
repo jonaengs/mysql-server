@@ -1187,19 +1187,20 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const doub
           }
           cumulative += jg_buck.frequency;
         }
-        // In case the lookup value doesn't match anything stored in the histogram
+        // Should not be reachable?
+        assert(false);
       } else {
         for (const auto &jg_buck : histogram->m_buckets.equi_bucks) {
-          cumulative += jg_buck.frequency;
           if (jg_buck.upper_bound >= cmp_val) {
             return lookup_result{
               (base_freq * jg_buck.frequency) / jg_buck.ndv,
-              cumulative * base_freq, 
-              (1 - (cumulative + jg_buck.frequency)) * base_freq
+              (cumulative) * base_freq,
+              (1 - cumulative) * base_freq
             };
           }
+          cumulative += jg_buck.frequency;
         }
-        // In case the lookup value doesn't match anything stored in the histogram
+        assert(false);
       }
     }
 
@@ -1304,7 +1305,7 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const bool
       if (histogram->m_buckets.single_bucks.size() >= 1) {
         auto first = histogram->m_buckets.single_bucks[0];
         auto mult = first.value == cmp_val ? first.frequency : 1 - first.frequency;
-        return lookup_result{mult * base_freq, 0, 0};
+        return lookup_result{mult * base_freq, 0, 0}; // Ignore LT and GT
       }
     }
 
@@ -1364,17 +1365,19 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const long
         }
       } else {
         for (const auto &jg_buck : histogram->m_buckets.equi_bucks) {
-          cumulative += jg_buck.frequency;
           if (jg_buck.upper_bound >= cmp_val) {
             return lookup_result{
               (base_freq * jg_buck.frequency) / jg_buck.ndv,
-              cumulative * base_freq, 
-              (1 - (cumulative + jg_buck.frequency)) * base_freq
+              (cumulative) * base_freq,
+              (1 - cumulative) * base_freq
             };
           }
+          cumulative += jg_buck.frequency;
         }
+        // Should not be reachable, as final upper_bound < cmp_val should mean that 
+        // cmp_val > max_val, which should have been caught above
+        assert(false);
       }
-      // If we didn't match in any values present in the histogram
     }
 
     // 
