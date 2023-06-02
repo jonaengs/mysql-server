@@ -2280,6 +2280,7 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
       case enum_operator::IN_LIST:
       
       case enum_operator::NOT_EQUALS_TO:
+      case enum_operator::NOT_IN_LIST:
 
       // TODO:
       // case enum_operator::IS_NULL:

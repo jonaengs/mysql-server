@@ -60,7 +60,16 @@ SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIM
 --echo
 --echo
 --echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.verified" <> FALSE;
+EXPLAIN SELECT * FROM twitter WHERE j->>"$.*.verified" <> FALSE;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.verified" <> TRUE;
+EXPLAIN SELECT * FROM twitter WHERE j->>"$.**.verified" <> TRUE;
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+
+--echo
+--echo
+--echo 
+EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.followers_count" NOT IN (0, 1, 2, 3, 4);
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.verified" NOT IN (TRUE, FALSE);
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;

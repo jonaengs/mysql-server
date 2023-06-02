@@ -745,7 +745,7 @@ Histogram *Json_flex::clone(MEM_ROOT *mem_root) const {
 
 // Eye-catching value that's returned from functions which return selectivity
 // and which shouldn't be able to fail but which somehow did fail.
-const double err_selectivity_val = 0.1337;
+const double err_selectivity_val = 0.123456789;
 
 template<typename T>
 double selectivity_getter_dispatch(const Json_flex *jflex, const String &arg_path, enum_operator op, T value) {
@@ -872,12 +872,31 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
           }
           return sum;
         }
+        case Item::Type::FUNC_ITEM: {
+          double sum = 0;
+          for (size_t i = 0; i < comparand_count; i++) {
+            if (comparands[i]->val_int() == 1 || comparands[i]->val_int() == 0) {
+              sum += jflex->get_equal_to_selectivity(arg_path, comparands[i]->val_bool());
+            } else {
+              assert(false);
+              return err_selectivity_val;
+            }
+          }
+          return sum;
+        }
         default: {
           // For now, assume no float or bool lists
           assert(false);
           return err_selectivity_val;
         }
       }
+    }
+    case enum_operator::NOT_IN_LIST: {
+      double in_list_selectivity = multi_val_dispatch(
+        jflex, arg_path, enum_operator::IN_LIST, comparands, comparand_count
+      );
+      double total_selectivity = jflex->get_not_null_selectivity(arg_path);
+      return total_selectivity - in_list_selectivity;
     }
 
     default: {
@@ -1468,6 +1487,13 @@ double Json_flex::get_less_than_selectivity(const String &path) const {
 
 double Json_flex::get_greater_than_selectivity(const String &path) const {
   return lookup_bucket(path).gt_frequency;
+}
+double Json_flex::get_not_null_selectivity(const String &path) const {
+  if (auto bucketOpt = find_bucket(path)) {
+    auto bucket = *bucketOpt;
+    return bucket->frequency * (1 - bucket->null_values);
+  }
+  return min_frequency;
 }
 
 }  // namespace histograms
