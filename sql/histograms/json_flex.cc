@@ -860,6 +860,10 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
           for (size_t i = 0; i < comparand_count; i++) {
             sum += jflex->get_equal_to_selectivity(arg_path, comparands[i]->val_int());
           }
+          if (auto bucketOpt = jflex->find_bucket(arg_path)) {
+            // Bound sum by the complete frequency of the bucket
+            return std::min((*bucketOpt)->frequency, sum);
+          }
           return sum;
         }
         case Item::Type::STRING_ITEM: {
@@ -869,6 +873,9 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
             const String *str_val = comparands[i]->val_str(&str_buf);
             // const String truncated = str_val->substr(0, HISTOGRAM_MAX_COMPARE_LENGTH);
             sum += jflex->get_equal_to_selectivity(arg_path, *str_val);
+          }
+          if (auto bucketOpt = jflex->find_bucket(arg_path)) {
+            return std::min((*bucketOpt)->frequency, sum);
           }
           return sum;
         }
@@ -881,6 +888,9 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
               assert(false);
               return err_selectivity_val;
             }
+          }
+          if (auto bucketOpt = jflex->find_bucket(arg_path)) {
+            return std::min((*bucketOpt)->frequency, sum);
           }
           return sum;
         }
@@ -895,7 +905,7 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
       double in_list_selectivity = multi_val_dispatch(
         jflex, arg_path, enum_operator::IN_LIST, comparands, comparand_count
       );
-      double total_selectivity = jflex->get_not_null_selectivity(arg_path);
+      double total_selectivity = jflex->get_not_eq_null_selectivity(arg_path);
       return total_selectivity - in_list_selectivity;
     }
 
@@ -1000,10 +1010,21 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
           break;
         }
         case Item::Type::NULL_ITEM: {
-          // TODO: Handle = NULL
-          // Will we have to handle >, =<, ... here?
-          assert(false);
-          return true;
+          // EQUAL TO NULL checks whether the path exists and leads to a null value
+          // NOT EQUALS TO NULL checks whether the path exists and does not lead to a null value
+          // IS NULL <=> NOT EXISTS
+          switch (op) {
+            case enum_operator::EQUALS_TO:
+              *selectivity = get_eq_null_selectivity(arg_path);
+              break;
+            case enum_operator::NOT_EQUALS_TO:
+              *selectivity = get_not_eq_null_selectivity(arg_path);
+              break;
+            default:
+              assert(false);
+              return true;
+          }
+          break;
         }
         case Item::Type::FUNC_ITEM: {
           if (comparand->val_int() == 1 || comparand->val_int() == 0) {
@@ -1276,7 +1297,7 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, String cmp
           } else if (cmp_result > 0) {
             // If buck_str > cmp_val, stop early.
             return lookup_result{
-              histogram->rest_mean_frequency.value_or(0), 
+              histogram->rest_mean_frequency.value_or(0) * base_freq,
               (cumulative) * base_freq, 
               (1 - cumulative) * base_freq
             };
@@ -1284,7 +1305,7 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, String cmp
           cumulative += jg_buck.frequency;
         }
         return lookup_result{
-          histogram->rest_mean_frequency.value_or(0), 
+          histogram->rest_mean_frequency.value_or(0) * base_freq, 
           base_freq, 
           0
         };
@@ -1488,12 +1509,20 @@ double Json_flex::get_less_than_selectivity(const String &path) const {
 double Json_flex::get_greater_than_selectivity(const String &path) const {
   return lookup_bucket(path).gt_frequency;
 }
-double Json_flex::get_not_null_selectivity(const String &path) const {
+double Json_flex::get_not_eq_null_selectivity(const String &path) const {
   if (auto bucketOpt = find_bucket(path)) {
     auto bucket = *bucketOpt;
     return bucket->frequency * (1 - bucket->null_values);
   }
-  return min_frequency;
+  // TODO: What does MySQL use elsewhere for =/<> NULL estimation?
+  return min_frequency * 0.8; // Assume 20% of values are null
+}
+double Json_flex::get_eq_null_selectivity(const String &path) const {
+  if (auto bucketOpt = find_bucket(path)) {
+    auto bucket = *bucketOpt;
+    return bucket->frequency * bucket->null_values;
+  }
+  return min_frequency * 0.2; // Assume 20% of values are null
 }
 
 }  // namespace histograms

@@ -22,6 +22,19 @@ USING DATA '{
       }
     ],
     [
+      "base64:type254:cGxhY2Vfb2JqLmNvdW50cnlfY29kZQ==",
+      0.014299556625656986,
+      0.0
+    ],
+    [
+      "base64:type254:cGxhY2Vfb2JqLmNvdW50cnlfY29kZV9zdHI=",
+      0.014299556625656986, 0.0, "base64:type254:QU0=", "base64:type254:WkE=", 31,
+      { "type": "singleton",
+        "buckets": [["base64:type254:Q0E=", 0.07063655030800821], ["base64:type254:R0I=", 0.2299794661190965], ["base64:type254:TVg=", 0.05297741273100616], ["base64:type254:Tkw=", 0.07967145790554415], ["base64:type254:VVM=", 0.2948665297741273]],
+        "rest_frequency": 0.010456483967777604
+      }
+    ],
+    [
       "base64:type254:dXNlcl9vYmouZm9sbG93ZXJzX2NvdW50X251bQ==",
       1.0, 0.0, 0, 1605806, 3940,
       { "type": "equi-height",
@@ -68,8 +81,16 @@ SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIM
 --echo
 --echo
 --echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.followers_count" NOT IN (0, 1, 2, 3, 4);
+EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" IN ("GB", "US", "CA", "AU", "NZ", "IE");
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.verified" NOT IN (TRUE, FALSE);
+--echo 
+EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" NOT IN ("GB", "US", "CA", "AU", "NZ", "IE");
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" <> NULL;
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo 
+EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" = NULL;
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+

@@ -316,7 +316,8 @@ class Json_flex : public Histogram {
   double get_equal_to_selectivity(const String &path) const;
   double get_less_than_selectivity(const String &path) const;
   double get_greater_than_selectivity(const String &path) const;
-  double get_not_null_selectivity(const String &path) const;
+  double get_not_eq_null_selectivity(const String &path) const;
+  double get_eq_null_selectivity(const String &path) const;
   
   template<typename T>
   double get_not_equal_to_selectivity(const String &path, const T value) const;
