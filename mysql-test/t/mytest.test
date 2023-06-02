@@ -91,6 +91,18 @@ SET OPTIMIZER_TRACE = "enabled=on";
 EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" IS NOT NULL;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo 
+--echo
+--echo
 EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" IS NULL;
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo
+--echo
+--echo 
+EXPLAIN SELECT * FROM twitter WHERE JSON_VALUE(j, "$.place.country_code") IS NULL;
+SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo
+--echo
+--echo 
+EXPLAIN SELECT * FROM twitter WHERE JSON_VALUE(j, "$.place.country_code") IS NOT NULL;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 

@@ -312,6 +312,7 @@ class Json_flex : public Histogram {
   */
   bool get_selectivity(Item_func *func, Item **comparands, size_t num_comparands, enum_operator op, double *selectivity) const;
 
+  double get_exists_selectivity(const String &path) const;
   double get_not_equal_to_selectivity(const String &path) const;
   double get_equal_to_selectivity(const String &path) const;
   double get_less_than_selectivity(const String &path) const;

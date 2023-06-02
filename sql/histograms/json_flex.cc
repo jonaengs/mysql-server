@@ -948,12 +948,14 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
 
 
   // Record whether json_unquote is called. It's the only wrapper function currently supported.
-  // Its absence means we don't have information about the expected type of the path terminal.
-  bool json_unquote_called = func->func_name() == std::string("json_unquote");
+  // Its absence means we don't have information about the expected type of the path terminal
+  // TODO: Use func->functype() and Item_func::Functype enum instead. Enum seems to currently be missing a few of the functions we're checking against
+  bool raw_value_returned = func->func_name() == std::string("json_unquote")
+                         || func->func_name() == std::string("json_value");
   
   // Find the innermost function in the (potentially) nested set of function calls.
   Item_json_func *innermost_func;
-  if (json_unquote_called) {
+  if (func->func_name() == std::string("json_unquote")) {
     innermost_func = static_cast<Item_json_func *>(func->args[0]->real_item());
   } else {
     innermost_func = static_cast<Item_json_func *>(func);
@@ -962,6 +964,7 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
   // Find the index of the child containing the json path argument
   size_t path_idx;
   if (innermost_func->func_name() == std::string("json_extract")) path_idx = 1;
+  else if (innermost_func->func_name() == std::string("json_value")) path_idx = 1;
   else if (innermost_func->func_name() == std::string("json_unquote")) path_idx = 0;
   else return true;
   // TODO: Support for JSON_MEMBEROF and JSON_CONTAINS will require rewriting this first part
@@ -973,30 +976,55 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
   if (
     auto qstring_example_comparand = comparand_count > 0 ? comparands[0] : nullptr;
     build_histogram_query_string(json_path_arg, qstring_example_comparand, 
-                                 json_unquote_called, path_builder)
+                                 raw_value_returned, path_builder)
   ) return true;
   const String arg_path = String(path_builder.c_str(), path_builder.length(), m_charset);
 
 
   if (comparand_count == 0) {
+    // Checking for JSON null is really shitty. 
+    // Using IS NULL and IS NOT NULL is really checking EXISTS and NOT EXISTS
+    // Using IS NULL with JSON_VALUE basically combines NOT EXISTS and actually checking for a JSON null value
+      // Using IS NOT NULL with JSON_VALUE returns what you would expect
+    // To check for only JSON null, you have to do JSON_TYPE(JSON_EXTRACT(...)) = 'NULL'
+    // Alternatively, one can use JSON_VALUE with some other default than NULL
+    // Catching these two cases here won't be fun at all.
+
     // IS NULL checks whether the path exists and leads to a null value
     // IS NOT NULL checks whether the path exists and does not lead to a null value
-    switch (op) {
-      case enum_operator::IS_NULL:
-        *selectivity = get_eq_null_selectivity(arg_path);
-        break;
-      case enum_operator::IS_NOT_NULL:
-        *selectivity = get_not_eq_null_selectivity(arg_path);
-        break;
-      default:
-        assert(false);
-        return true;
+
+    if (func->func_name() == std::string("json_value")) {
+      // TODO: Check for default value not being null
+      // if (func->arg_count >= 4 && func->children[3]...)
+      switch (op) {
+        case enum_operator::IS_NULL:
+          *selectivity = 1 - get_not_eq_null_selectivity(arg_path);
+          break;
+        case enum_operator::IS_NOT_NULL:
+          *selectivity = get_not_eq_null_selectivity(arg_path);
+          break;
+        default:
+          assert(false);
+          return true;
+      }
+    } else {
+      switch (op) {
+        case enum_operator::IS_NULL:
+          *selectivity = 1 - get_exists_selectivity(arg_path);
+          break;
+        case enum_operator::IS_NOT_NULL:
+          *selectivity = get_exists_selectivity(arg_path);
+          break;
+        default:
+          assert(false);
+          return true;
+      }
     }
 
   // If json_unquote was called, and the comparand is a const, 
   // then we know that we have an actual value that we can lookup in specifically
   // in the histogram data. Otherwise, we can only look up the generated query string.
-  } else if (json_unquote_called && comparands[0]->const_item()) {
+  } else if (raw_value_returned && comparands[0]->const_item()) {
     // Assume that if one of the items are const, then all are. This may not actually be the case (can you do "t1.col1 in (1, 2, t2.col2)"?).
     if (comparand_count > 1) {
       *selectivity = multi_val_dispatch(this, arg_path, op, comparands, comparand_count);
@@ -1525,6 +1553,12 @@ double Json_flex::get_eq_null_selectivity(const String &path) const {
     return bucket->frequency * bucket->null_values;
   }
   return min_frequency * 0.2; // Assume 20% of values are null
+}
+double Json_flex::get_exists_selectivity(const String &path) const {
+  if (auto bucketOpt = find_bucket(path)) {
+    return (*bucketOpt)->frequency;
+  }
+  return min_frequency;
 }
 
 }  // namespace histograms
