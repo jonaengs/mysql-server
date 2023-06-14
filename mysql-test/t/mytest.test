@@ -4,36 +4,18 @@
 
 --echo # CREATE TABLE
 CREATE TABLE twitter(j JSON);
+CREATE TABLE twitter2(j JSON);
 
 
 --echo # INSERT DATA
-INSERT INTO twitter VALUES('{"user": {"followers_count": 10}}');
+INSERT INTO twitter VALUES('{"user": {"followers_count": 10, "id": 1}}');
+INSERT INTO twitter2 VALUES('{"user": {"followers_count": 10, "id": 2}}');
 
 
 
 ANALYZE TABLE twitter UPDATE HISTOGRAM ON j
 USING DATA '{
   "buckets": [
-    [
-      "base64:type254:dXNlcl9vYmoudmVyaWZpZWRfYm9vbA==",
-      1.0, 0.0, false, true, 2,
-      { "type": "singleton",
-        "buckets": [[false, 0.9999530185576697], [true, 4.698144233027954e-05]]
-      }
-    ],
-    [
-      "base64:type254:cGxhY2Vfb2JqLmNvdW50cnlfY29kZQ==",
-      0.014299556625656986,
-      0.0
-    ],
-    [
-      "base64:type254:cGxhY2Vfb2JqLmNvdW50cnlfY29kZV9zdHI=",
-      0.014299556625656986, 0.0, "base64:type254:QU0=", "base64:type254:WkE=", 31,
-      { "type": "singleton",
-        "buckets": [["base64:type254:Q0E=", 0.07063655030800821], ["base64:type254:R0I=", 0.2299794661190965], ["base64:type254:TVg=", 0.05297741273100616], ["base64:type254:Tkw=", 0.07967145790554415], ["base64:type254:VVM=", 0.2948665297741273]],
-        "rest_frequency": 0.010456483967777604
-      }
-    ],
     [
       "base64:type254:dXNlcl9vYmouZm9sbG93ZXJzX2NvdW50X251bQ==",
       1.0, 0.0, 0, 1605806, 3940,
@@ -53,56 +35,42 @@ USING DATA '{
 
 # SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 'twitter' AND COLUMN_NAME = 'j';
 SET OPTIMIZER_TRACE = "enabled=on";
+SET @@optimizer_switch="hypergraph_optimizer=on";
+SET @@explain_format=TREE;
 
-# --echo 
-# EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.verified" = FALSE;
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+--echo
+--echo
+--echo 
+SELECT 
+  * 
+FROM 
+  twitter
+  INNER JOIN
+  twitter2 
+  ON 
+  twitter.j->>"$.user.followers_count" = twitter2.j->>"$.user.followers_count"
+WHERE 
+  twitter.j->>"$.user.followers_count" > 0 AND twitter2.j->>"$.user.id" = 2
+;
+--echo
+--echo
+--echo 
+SELECT TRACE FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
-# --echo
-# --echo 
-# --echo 
-# EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.followers_count" > 5000;
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# 
-# --echo
-# --echo
-# --echo 
-# EXPLAIN SELECT * FROM twitter WHERE j->>"$.user.followers_count" < 5000;
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# 
-# --echo
-# --echo
-# --echo 
-# EXPLAIN SELECT * FROM twitter WHERE j->>"$.*.verified" <> FALSE;
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# EXPLAIN SELECT * FROM twitter WHERE j->>"$.**.verified" <> TRUE;
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# 
-# --echo
-# --echo
-# --echo 
-# EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" IN ("GB", "US", "CA", "AU", "NZ", "IE");
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-# --echo 
-# --echo 
-# EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" NOT IN ("GB", "US", "CA", "AU", "NZ", "IE");
-# SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" IS NOT NULL;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo 
---echo
---echo
-EXPLAIN SELECT * FROM twitter WHERE j->>"$.place.country_code" IS NULL;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 --echo
 --echo
 --echo 
-EXPLAIN SELECT * FROM twitter WHERE JSON_VALUE(j, "$.place.country_code") IS NULL;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
---echo
---echo
---echo 
-EXPLAIN SELECT * FROM twitter WHERE JSON_VALUE(j, "$.place.country_code") IS NOT NULL;
+EXPLAIN SELECT 
+  * 
+FROM 
+  twitter
+  INNER JOIN
+  twitter2 
+  ON 
+  twitter.j->>"$.user.followers_count" = twitter2.j->>"$.user.followers_count"
+WHERE 
+  twitter.j->>"$.user.followers_count" > 0 AND twitter2.j->>"$.user.id" = 2
+;
+SELECT TRACE FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 

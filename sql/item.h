@@ -5195,10 +5195,11 @@ class Item_func_pi : public Item_float {
 class Item_string : public Item_basic_constant {
   typedef Item_basic_constant super;
 
- protected:
+ public:
   explicit Item_string(const POS &pos) : super(pos), m_cs_specified(false) {
     set_data_type(MYSQL_TYPE_VARCHAR);
   }
+ protected:
 
   void init(const char *str, size_t length, const CHARSET_INFO *cs,
             Derivation dv, uint repertoire) {

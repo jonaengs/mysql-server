@@ -279,19 +279,27 @@ class Json_flex : public Histogram {
   bool histogram_to_json(Json_object *json_object) const override;
 
   /**
-    @return json_primitive of values/buckets in this histogram
+    @return number of values/buckets in this histogram
   */
   size_t get_num_buckets() const override { return m_buckets.size(); }
 
-  /**
-    Get the estimated json_primitive of distinct non-NULL values.
-    @return json_primitive of distinct non-NULL values
+  size_t get_num_distinct_values() const override { return -1; }
 
-    TODO(christiani): If the histogram is based on sampling, then this estimate
-    is potentially off by a factor 1/sampling_rate. It should be adjusted to an
-    actual estimate if we are going to use it.
-  */
-  size_t get_num_distinct_values() const override { return get_num_buckets(); }
+
+  // TODO
+  // Problem: Simply getting the NDV estimate may not be enough.
+  //    The existing code probably does a calculation like: n_rows_not_null * (1/ndv).
+  //    However, this is kind of terrible for JSON columns, where the number of rows is heavily dependent 
+  //    on which key path is being accessed. If a predicate is applied on the column first, then
+  //    things should be fine, as that predicate will make the n_rows estimate better. 
+  //    But if they are not 
+  // Another challenge: figuring out which types to look at. The simplest solution is the sum the ndv of all types.
+  //    However, if the other side the equality (for joins) is a regular column then we could infer the type
+  //    from that. TODO: what I just said. 
+  // I'm also kind of assuming that join conditions are always using key paths that lead to primitive values.
+  //    This should hold true almost all of the time (can you even do a join on a json object or json array?),
+  //    but it is possible that it won't hold and I'm not doing any checking to handle those cases right now.
+  size_t get_ndv(Item_func *func) const;
 
   /**
     Returns the histogram type as a readable string.

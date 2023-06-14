@@ -43,6 +43,7 @@
 #include "sql/sql_select.h"
 #include "sql/table.h"
 #include "template_utils.h"
+#include "sql/histograms/json_flex.h"
 
 using std::string;
 
@@ -153,6 +154,46 @@ static double EstimateFieldSelectivity(Field *field, double *selectivity_cap,
   return std::min(selectivity, 1.0);
 }
 
+
+static double EstimateJsonFuncSelectivity(Item_func *func, string *trace) {
+  
+  const Item_field *item_field = func->get_func_child_field();
+
+  if (item_field != nullptr) {
+    const Field *field = item_field->field;
+    const histograms::Histogram *const histogram =
+        field->table->s->find_histogram(field->field_index());
+
+    if (histogram != nullptr) {
+      /*
+        ... we estimate selectivity to be 1/N.
+      */
+
+      if (histogram->get_histogram_type() != histograms::Histogram::enum_histogram_type::JSON_FLEX) {
+        assert(false);
+        return -1;
+      }
+      const histograms::Json_flex *json_flex = down_cast<const histograms::Json_flex *>(histogram);
+
+      const double distinct_values = json_flex->get_ndv(func);
+      const double selectivity = 1.0 / std::max(1.0, distinct_values);
+      if (trace != nullptr) {
+        *trace += StringPrintf(
+            " - estimating selectivity %f for JSON (I hope) function %s"
+            " over field '%s.%s'"
+            " from histogram showing %.1f distinct values.\n",
+            selectivity, func->func_name(),
+            field->table->alias, field->field_name,
+            distinct_values);
+      }
+
+      return selectivity;
+    }
+  }
+
+  return -1;
+}
+
 /**
   For the given condition, to try estimate its filtering selectivity,
   on a 0..1 scale (where 1.0 lets all records through).
@@ -161,12 +202,16 @@ static double EstimateFieldSelectivity(Field *field, double *selectivity_cap,
   for joins with multiple predicates.
  */
 double EstimateSelectivity(THD *thd, Item *condition, string *trace) {
+  // assert(false);
+
+
   // If the item is a true constant, we can say immediately whether it passes
   // or filters all rows. (Actually, calling get_filtering_effect() below
   // would crash if used_tables() is zero, which it is for const items.)
   if (condition->const_item()) {
     return (condition->val_int() != 0) ? 1.0 : 0.0;
   }
+
 
   // For field = field (e.g. t1.x = t2.y), we try to use index information
   // to find a better selectivity estimate. We look for indexes on both
@@ -217,6 +262,33 @@ double EstimateSelectivity(THD *thd, Item *condition, string *trace) {
         // Same, for <anything> = field.
         EstimateFieldSelectivity(down_cast<Item_field *>(right)->field,
                                  &selectivity_cap, trace);
+      }
+      
+      //////////////////////////////
+      // JSON_FLEX stuff below
+      //////////////////////////////
+      else if (left->type() == Item::FUNC_ITEM && right->type() == Item::FUNC_ITEM) {
+        double selectivity = -1.0;
+        for (Item_func *field : {down_cast<Item_func *>(left),
+                                 down_cast<Item_func *>(right)}) {
+          selectivity = std::max(
+              selectivity,
+              EstimateJsonFuncSelectivity(field, trace));
+        }
+        if (selectivity >= 0.0) {
+          selectivity = std::min(selectivity, selectivity_cap);
+          if (trace != nullptr) {
+            *trace += StringPrintf(
+                " - used an index or a histogram for %s, selectivity = %.3f\n",
+                ItemToString(condition).c_str(), selectivity);
+          }
+          return selectivity;
+        }
+      }
+      else if (left->type() == Item::FUNC_ITEM) {
+        EstimateJsonFuncSelectivity(down_cast<Item_func *>(left), trace);
+      } else if (right->type() == Item::FUNC_ITEM) {
+        EstimateJsonFuncSelectivity(down_cast<Item_func *>(right), trace);
       }
     }
   }

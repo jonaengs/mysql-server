@@ -914,7 +914,28 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
       return err_selectivity_val;
     }
   }
+}
 
+bool get_json_func_path_item(Item_func *func, Item **json_path_arg) {
+  // Find the innermost function in the (potentially) nested set of function calls.
+  // Currently, we're just assuming that the functions passed here are always JSON funcs. TODO: Find a way to check for JSON functions
+  Item_json_func *innermost_func;
+
+  if (func->func_name() == std::string("json_unquote")) {
+    innermost_func = static_cast<Item_json_func *>(func->args[0]->real_item());
+  } else {
+    innermost_func = static_cast<Item_json_func *>(func);
+  }
+  
+  // Find the index of the child containing the json path argument
+  size_t path_idx;
+  if (innermost_func->func_name() == std::string("json_extract")) path_idx = 1;
+  else if (innermost_func->func_name() == std::string("json_value")) path_idx = 1;
+  else if (innermost_func->func_name() == std::string("json_unquote")) path_idx = 0;
+  else return true;
+
+  *json_path_arg = innermost_func->args[path_idx]->real_item();
+  return false;
 }
 
 // Sets selectivity to some value probably within the range [0, 1].
@@ -942,36 +963,19 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
       || op == enum_operator::IS_NOT_NULL);
   }
   
-  
-  // Currently, we'll handle the JSON_EXTRACT function.
-  // It takes a json_doc (simplifying assumption: a column), and a string path
 
 
   // Record whether json_unquote is called. It's the only wrapper function currently supported.
   // Its absence means we don't have information about the expected type of the path terminal
-  // TODO: Use func->functype() and Item_func::Functype enum instead. Enum seems to currently be missing a few of the functions we're checking against
+  // TODO: Use func->functype() and Item_func::Functype enum instead. The enum seems to currently be missing a few of the functions we're checking against
   bool raw_value_returned = func->func_name() == std::string("json_unquote")
                          || func->func_name() == std::string("json_value");
+  // TODO: Support for JSON_MEMBEROF and JSON_CONTAINS
   
-  // Find the innermost function in the (potentially) nested set of function calls.
-  Item_json_func *innermost_func;
-  if (func->func_name() == std::string("json_unquote")) {
-    innermost_func = static_cast<Item_json_func *>(func->args[0]->real_item());
-  } else {
-    innermost_func = static_cast<Item_json_func *>(func);
-  }
   
-  // Find the index of the child containing the json path argument
-  size_t path_idx;
-  if (innermost_func->func_name() == std::string("json_extract")) path_idx = 1;
-  else if (innermost_func->func_name() == std::string("json_value")) path_idx = 1;
-  else if (innermost_func->func_name() == std::string("json_unquote")) path_idx = 0;
-  else return true;
-  // TODO: Support for JSON_MEMBEROF and JSON_CONTAINS will require rewriting this first part
-
-
   // Build query path
-  Item *json_path_arg = innermost_func->args[path_idx]->real_item();
+  Item *json_path_arg;
+  get_json_func_path_item(func, &json_path_arg);
   std::string path_builder("");
   if (
     auto qstring_example_comparand = comparand_count > 0 ? comparands[0] : nullptr;
@@ -982,8 +986,9 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
 
 
   if (comparand_count == 0) {
-    // Checking for JSON null is really shitty. 
-    // Using IS NULL and IS NOT NULL is really checking EXISTS and NOT EXISTS
+    // Checking for JSON null is kinda shitty. 
+    // If I understand things correctly, this is how things work:
+    // Using IS NULL and IS NOT NULL is really checking EXISTS and NOT EXISTS (for the given path)
     // Using IS NULL with JSON_VALUE basically combines NOT EXISTS and actually checking for a JSON null value
       // Using IS NOT NULL with JSON_VALUE returns what you would expect
     // To check for only JSON null, you have to do JSON_TYPE(JSON_EXTRACT(...)) = 'NULL'
@@ -1084,13 +1089,52 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
   return false;  
 }
 
+size_t Json_flex::get_ndv(Item_func *func) const {
+  // We don't want to deal with 
+  bool comparison_is_unquoted = func->func_name() == std::string("json_unquote")
+                                || func->func_name() == std::string("json_value");
+  if (!comparison_is_unquoted) return -1;
+
+  // I don't think these go on the heap...?
+  Item_func_sin bool_item = Item_func_sin(POS(), nullptr);
+  Item_int int_item = Item_int(0);
+  Item_float float_item = Item_float(0.0, 0);
+  Item_string string_item = Item_string(POS());
+
+  size_t total_ndv = 0;
+  for (Item *comparand : {implicit_cast<Item *>(&bool_item), implicit_cast<Item *>(&int_item),
+                          implicit_cast<Item *>(&float_item), implicit_cast<Item *>(&string_item)})
+  {
+    // This is not exactly the most efficient way of doing this. But it's very simple.
+
+    // Build query path
+    Item *json_path_arg;
+    get_json_func_path_item(func, &json_path_arg);
+    std::string path_builder("");
+    if (
+      build_histogram_query_string(json_path_arg, comparand, true, path_builder)
+    ) {
+      assert(false);
+      return -1;
+    }
+    const String arg_path = String(path_builder.c_str(), path_builder.length(), m_charset);
+
+    if (auto bucketOpt = find_bucket(arg_path)) {
+      const JsonBucket *bucket = *bucketOpt;
+      if (bucket->ndv) {
+        total_ndv += (*bucket->ndv);
+      }
+    }
+  }
+
+  return total_ndv > 0 ? total_ndv : -1;
+}
+
 // Separators used when building the histogram query string
 const std::string TYPE_SEP = "_";
 const std::string KEY_SEP = ".";
 
 bool Json_flex::build_histogram_query_string(Item *json_path_arg, Item *comparand, bool arg_type_certain, std::string &builder) {
-  // TODO: How do we include boolean queries? THey don't seem to take an arg, so we don't have a comparand
-
   // Copy string value in function argument  
   StringBuffer<MAX_FIELD_WIDTH> str_buf(json_path_arg->collation.collation);
   std::string str = to_string(*json_path_arg->val_str(&str_buf));
@@ -1179,14 +1223,18 @@ outer_loop:
         builder.append("_str");
         break;
       }
+      // TODO: Try to find a better way to identify bools. This is really ugly.
       case Item::Type::FUNC_ITEM: {
-        if (comparand->val_int() == 1 || comparand->val_int() == 0) {
-          builder.append("_bool");
-          break;
-        } else {
-          assert(false);
-          return true;
-        }
+
+        // TODO: Fix this. The stuff below shouldn't be commented out, but I need to do so to make this work with 
+        // the get_ndv() function, because I can't figure out how to set the value of an Item_func.
+        builder.append("_bool");
+        break;
+        // if (comparand->val_int() == 1 || comparand->val_int() == 0) {
+        // } else {
+        //   assert(false);
+        //   return true;
+        // }
       }
       default: {
         assert(false);
