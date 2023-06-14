@@ -176,6 +176,8 @@ static double EstimateJsonFuncSelectivity(Item_func *func, string *trace) {
       const histograms::Json_flex *json_flex = down_cast<const histograms::Json_flex *>(histogram);
 
       const double distinct_values = json_flex->get_ndv(func);
+      if (distinct_values <= 0) return -1;
+      
       const double selectivity = 1.0 / std::max(1.0, distinct_values);
       if (trace != nullptr) {
         *trace += StringPrintf(
@@ -202,9 +204,6 @@ static double EstimateJsonFuncSelectivity(Item_func *func, string *trace) {
   for joins with multiple predicates.
  */
 double EstimateSelectivity(THD *thd, Item *condition, string *trace) {
-  // assert(false);
-
-
   // If the item is a true constant, we can say immediately whether it passes
   // or filters all rows. (Actually, calling get_filtering_effect() below
   // would crash if used_tables() is zero, which it is for const items.)
@@ -267,7 +266,9 @@ double EstimateSelectivity(THD *thd, Item *condition, string *trace) {
       //////////////////////////////
       // JSON_FLEX stuff below
       //////////////////////////////
-      else if (left->type() == Item::FUNC_ITEM && right->type() == Item::FUNC_ITEM) {
+
+      // "if" instead of "else if" to allow combinations of FIELD_ITEM x FUNC_ITEM
+      if (left->type() == Item::FUNC_ITEM && right->type() == Item::FUNC_ITEM) {
         double selectivity = -1.0;
         for (Item_func *field : {down_cast<Item_func *>(left),
                                  down_cast<Item_func *>(right)}) {

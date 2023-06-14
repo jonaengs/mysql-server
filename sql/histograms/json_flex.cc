@@ -1089,21 +1089,19 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
   return false;  
 }
 
+// Separators used when building the histogram query string
+const std::string TYPE_SEP = "_";
+const std::string KEY_SEP = ".";
+
 size_t Json_flex::get_ndv(Item_func *func) const {
   // We don't want to deal with 
   bool comparison_is_unquoted = func->func_name() == std::string("json_unquote")
                                 || func->func_name() == std::string("json_value");
   if (!comparison_is_unquoted) return -1;
 
-  // I don't think these go on the heap...?
-  Item_func_sin bool_item = Item_func_sin(POS(), nullptr);
-  Item_int int_item = Item_int(0);
-  Item_float float_item = Item_float(0.0, 0);
-  Item_string string_item = Item_string(POS());
-
+  // If int and float get separate suffixes, they must be added here as well
   size_t total_ndv = 0;
-  for (Item *comparand : {implicit_cast<Item *>(&bool_item), implicit_cast<Item *>(&int_item),
-                          implicit_cast<Item *>(&float_item), implicit_cast<Item *>(&string_item)})
+  for (const std::string suffix : {"num", "bool", "str"})
   {
     // This is not exactly the most efficient way of doing this. But it's very simple.
 
@@ -1112,11 +1110,13 @@ size_t Json_flex::get_ndv(Item_func *func) const {
     get_json_func_path_item(func, &json_path_arg);
     std::string path_builder("");
     if (
-      build_histogram_query_string(json_path_arg, comparand, true, path_builder)
+      build_histogram_query_string(json_path_arg, nullptr, false, path_builder)
     ) {
       assert(false);
       return -1;
     }
+    path_builder.append(TYPE_SEP);
+    path_builder.append(suffix);
     const String arg_path = String(path_builder.c_str(), path_builder.length(), m_charset);
 
     if (auto bucketOpt = find_bucket(arg_path)) {
@@ -1129,10 +1129,6 @@ size_t Json_flex::get_ndv(Item_func *func) const {
 
   return total_ndv > 0 ? total_ndv : -1;
 }
-
-// Separators used when building the histogram query string
-const std::string TYPE_SEP = "_";
-const std::string KEY_SEP = ".";
 
 bool Json_flex::build_histogram_query_string(Item *json_path_arg, Item *comparand, bool arg_type_certain, std::string &builder) {
   // Copy string value in function argument  
