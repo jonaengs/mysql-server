@@ -280,7 +280,7 @@ double EstimateSelectivity(THD *thd, Item *condition, string *trace) {
           selectivity = std::min(selectivity, selectivity_cap);
           if (trace != nullptr) {
             *trace += StringPrintf(
-                " - used an index or a histogram for %s, selectivity = %.3f\n",
+                " - used an index or a histogram for %s, selectivity = %.6f\n",
                 ItemToString(condition).c_str(), selectivity);
           }
           return selectivity;

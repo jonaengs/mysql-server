@@ -714,7 +714,7 @@ public:
    Helper method for contributes_to_filter. 
    Made public to use in item_cmpfunc as well.
   */
-  Item_field* get_func_child_field();
+  Item_field* get_func_child_field() const;
 protected:
   /**
     Named parameters are allowed in a parameter list

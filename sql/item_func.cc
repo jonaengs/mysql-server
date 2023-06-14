@@ -883,7 +883,7 @@ Item *Item_func::get_tmp_table_item(THD *thd) {
   return result;
 }
 
-Item_field* Item_func::get_func_child_field() {
+Item_field* Item_func::get_func_child_field() const {
   // Recurseively traverses Item_func objects until a field child is found
   for (uint i = 0; i < arg_count; i++) {
     Item *child = args[0]->real_item();
@@ -933,7 +933,7 @@ const Item_field *Item_func::contributes_to_filter(
   if (arg_count == 2) {    
     const Item::Type arg_1_type = args[0]->real_item()->type();
     if (arg_1_type == Item::FUNC_ITEM ) {
-      Item_func *func = static_cast<Item_func *>(args[0]->real_item());
+      const Item_func *func = static_cast<Item_func *>(args[0]->real_item());
       Item_field *fld = func->get_func_child_field();
       if (fld) {
         return fld;
@@ -997,7 +997,7 @@ const Item_field *Item_func::contributes_to_filter(
     else if (arg_type == Item::FUNC_ITEM ) {
       // TODO: Remove this. Leaving it for now to reduce chance of breaking something
       
-      Item_func *func = static_cast<Item_func *>(args[i]->real_item());
+      const Item_func *func = static_cast<Item_func *>(args[i]->real_item());
       Item_field *fld = func->get_func_child_field();
       if (fld) {
           // This body is copied from previous if-statement

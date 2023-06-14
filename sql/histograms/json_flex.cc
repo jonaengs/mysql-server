@@ -916,15 +916,15 @@ double multi_val_dispatch(const Json_flex *jflex, const String &arg_path,
   }
 }
 
-bool get_json_func_path_item(Item_func *func, Item **json_path_arg) {
+bool get_json_func_path_item(const Item_func *func, Item **json_path_arg) {
   // Find the innermost function in the (potentially) nested set of function calls.
   // Currently, we're just assuming that the functions passed here are always JSON funcs. TODO: Find a way to check for JSON functions
-  Item_json_func *innermost_func;
+  const Item_json_func *innermost_func;
 
   if (func->func_name() == std::string("json_unquote")) {
-    innermost_func = static_cast<Item_json_func *>(func->args[0]->real_item());
+    innermost_func = static_cast<const Item_json_func *>(func->args[0]->real_item());
   } else {
-    innermost_func = static_cast<Item_json_func *>(func);
+    innermost_func = static_cast<const Item_json_func *>(func);
   }
   
   // Find the index of the child containing the json path argument
@@ -1093,7 +1093,7 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
 const std::string TYPE_SEP = "_";
 const std::string KEY_SEP = ".";
 
-size_t Json_flex::get_ndv(Item_func *func) const {
+size_t Json_flex::get_ndv(const Item_func *func) const {
   // We don't want to deal with 
   bool comparison_is_unquoted = func->func_name() == std::string("json_unquote")
                                 || func->func_name() == std::string("json_value");
