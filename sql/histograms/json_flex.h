@@ -36,19 +36,21 @@ class Json_flex;
   Likewise, the Json_flex class does not have a public copy constructor, but
   instead implements a clone() method that returns nullptr in case of failure.
 */
-enum class BucketValueType {
-  UNKNOWN,
+enum class BucketValuesType {
+  NOTHING,
   INT,
   FLOAT,
   STRING,
   BOOL,
 };
-enum class JFlexHistType {
+enum class JHistogramType {
   SINGLETON, EQUI_HEIGHT,
 };
 
 // Basically a very crude copy of the MySQL String class, without constructors and destructors 
 // so that we can put it in our union without to resort to various workarounds.
+// Will lead to leaks as a result, but as long as it's all on a MEM_ROOT, this shouldn't be 
+// too much of an issue...? For the prototype at least.
 struct BucketString {
   char *m_ptr;
   size_t m_length;
@@ -99,7 +101,7 @@ typedef std::optional<json_primitive> maybe_primitive;
 // Allowed types are the same as in json_primitive. Type is indicated by 
 // Apologies for the terrible name
 template<typename T> 
-struct JsonGram {
+struct KeyPathHistogram {
   struct SingleBucket {
     T value;
     double frequency; // As a fraction of the total frequency of the key_path
@@ -114,7 +116,7 @@ struct JsonGram {
     Mem_root_array<EquiBucket> equi_bucks;
   };
 
-  JFlexHistType buckets_type;
+  JHistogramType buckets_type;
   Buckets m_buckets;
   // rest_mean_frequency is used in conjunction with Singleton buckets when there are more items than the singleton can hold,
   // but an equi-height cannot be used (basically, for strings).
@@ -129,37 +131,37 @@ struct JsonGram {
   std::optional<double> rest_mean_frequency = std::nullopt;
 
   // creation functions assume no OOM. Caller can check for null pointer
-  static JsonGram<T>* create_singlegram(MEM_ROOT *mem_root);
-  static JsonGram<T>* create_equigram(MEM_ROOT *mem_root);
+  static KeyPathHistogram<T>* create_singlegram(MEM_ROOT *mem_root);
+  static KeyPathHistogram<T>* create_equigram(MEM_ROOT *mem_root);
   bool json_to_json_gram(const Json_array *buckets_array, Json_flex *parent, Error_context *context);
   bool populate_json_array(Json_array *buckets_array);
-  JsonGram<T> *duplicate_onto(MEM_ROOT *mem_root);
+  KeyPathHistogram<T> *duplicate_onto(MEM_ROOT *mem_root);
 
   const char *get_bucket_type_str() {
-    return (buckets_type == JFlexHistType::SINGLETON) ? 
+    return (buckets_type == JHistogramType::SINGLETON) ? 
       singlebucket_str() : equibucket_str();
   }
 
-  JsonGram<T>* copy_struct(MEM_ROOT *mem_root) {
-    return (buckets_type == JFlexHistType::SINGLETON) ? 
+  KeyPathHistogram<T>* copy_struct(MEM_ROOT *mem_root) {
+    return (buckets_type == JHistogramType::SINGLETON) ? 
       create_singlegram(mem_root) : create_equigram(mem_root);
   }
   
-  // JsonGram<T>* copy_struct(MEM_ROOT *mem_root, BucketValueType values_type) {
-  //   if (buckets_type == JFlexHistType::SINGLETON) {
+  // KeyPathHistogram<T>* copy_struct(MEM_ROOT *mem_root, BucketValuesType values_type) {
+  //   if (buckets_type == JHistogramType::SINGLETON) {
   //     switch (values_type) {
-  //       case BucketValueType::INT: return std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_singlegram(mem_root));
-  //       case BucketValueType::FLOAT: return std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_singlegram(mem_root));
-  //       case BucketValueType::BOOL: return std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_singlegram(mem_root));
-  //       case BucketValueType::STRING: return std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_singlegram(mem_root));
+  //       case BucketValuesType::INT: return std::any_cast<KeyPathHistogram<std::any> *>(KeyPathHistogram<longlong>::create_singlegram(mem_root));
+  //       case BucketValuesType::FLOAT: return std::any_cast<KeyPathHistogram<std::any> *>(KeyPathHistogram<double>::create_singlegram(mem_root));
+  //       case BucketValuesType::BOOL: return std::any_cast<KeyPathHistogram<std::any> *>(KeyPathHistogram<bool>::create_singlegram(mem_root));
+  //       case BucketValuesType::STRING: return std::any_cast<KeyPathHistogram<std::any> *>(KeyPathHistogram<BucketString>::create_singlegram(mem_root));
   //       default: assert(false);
   //     }
   //   } else {
   //     switch (values_type) {
-  //       case BucketValueType::INT: return std::any_cast<JsonGram<std::any> *>(JsonGram<longlong>::create_equigram(mem_root));
-  //       case BucketValueType::FLOAT: return std::any_cast<JsonGram<std::any> *>(JsonGram<double>::create_equigram(mem_root));
-  //       case BucketValueType::BOOL: return std::any_cast<JsonGram<std::any> *>(JsonGram<bool>::create_equigram(mem_root));
-  //       case BucketValueType::STRING: return std::any_cast<JsonGram<std::any> *>(JsonGram<BucketString>::create_equigram(mem_root));
+  //       case BucketValuesType::INT: return std::any_cast<KeyPathHistogram<std::any> *>(KeyPathHistogram<longlong>::create_equigram(mem_root));
+  //       case BucketValuesType::FLOAT: return std::any_cast<KeyPathHistogram<std::any> *>(KeyPathHistogram<double>::create_equigram(mem_root));
+  //       case BucketValuesType::BOOL: return std::any_cast<KeyPathHistogram<std::any> *>(KeyPathHistogram<bool>::create_equigram(mem_root));
+  //       case BucketValuesType::STRING: return std::any_cast<KeyPathHistogram<std::any> *>(KeyPathHistogram<BucketString>::create_equigram(mem_root));
   //       default: assert(false);
   //     }
   //   }
@@ -172,10 +174,10 @@ struct JsonGram {
 };
 
 // union anygram {
-//   JsonGram<double> *fgram;
-//   JsonGram<longlong> *igram;
-//   JsonGram<bool> *bgram; 
-//   JsonGram<BucketString> *sgram;
+//   KeyPathHistogram<double> *fgram;
+//   KeyPathHistogram<longlong> *igram;
+//   KeyPathHistogram<bool> *bgram; 
+//   KeyPathHistogram<BucketString> *sgram;
 // };
 
 
@@ -187,7 +189,7 @@ struct JsonGram {
 // * (if a new type was added): Add a new add_value_json_bucket for the type
 #define JSON_BUCKET_TOTAL_MEMBER_COUNT 6
 #define JSON_BUCKET_OPTIONAL_MEMBER_COUNT 3
-struct JsonBucket {
+struct KeyStat {
   const String key_path;
   const double frequency;
   const double null_values; // Frequency with which the key_path leads to null (distinct from not being present)
@@ -196,29 +198,29 @@ struct JsonBucket {
   const maybe_primitive min_val;
   const maybe_primitive max_val;
   const std::optional<longlong> ndv;
-  void *histogram;  // ptr to a JsonGram or a nullptr
+  void *histogram;  // ptr to a KeyPathHistogram or a nullptr
 
   // Assigned at creation.
-  const BucketValueType values_type; // The type of the values contained in the bucket (min/max an in json_gram)
+  const BucketValuesType values_type; // The type of the values contained in the bucket (min/max an in json_gram)
 
-  JsonBucket(String key_path, double frequency, double null_values)
+  KeyStat(String key_path, double frequency, double null_values)
       : key_path(key_path), frequency(frequency),
         null_values(null_values),
         min_val(std::nullopt), max_val(std::nullopt),
         ndv(std::nullopt), histogram(nullptr),
-        values_type(BucketValueType::UNKNOWN){}
+        values_type(BucketValuesType::NOTHING){}
 
-  JsonBucket(String key_path, double frequency, double null_values,
+  KeyStat(String key_path, double frequency, double null_values,
              maybe_primitive min_val, maybe_primitive max_val, std::optional<longlong> ndv, 
-             BucketValueType values_type, void *json_gram)
+             BucketValuesType values_type, void *json_gram)
       : key_path(key_path), frequency(frequency),
         null_values(null_values),
         min_val(min_val), max_val(max_val),
         ndv(ndv), histogram(json_gram),
         values_type(values_type){}
 
-    // ~JsonBucket() {
-    //   if (values_type == BucketValueType::STRING) {
+    // ~KeyStat() {
+    //   if (values_type == BucketValuesType::STRING) {
     //     if (min_val) my_free((*min_val)._string.m_ptr);
     //     if (max_val) my_free((*max_val)._string.m_ptr);
     //   }
@@ -342,7 +344,7 @@ class Json_flex : public Histogram {
   template<typename T>
   lookup_result lookup_bucket(const String &path, const T cmp_val) const;
   lookup_result lookup_bucket(const String &path) const;
-  std::optional<const JsonBucket *> find_bucket(const String &path) const;
+  std::optional<const KeyStat *> find_bucket(const String &path) const;
   
  protected:
   /**
@@ -398,7 +400,7 @@ class Json_flex : public Histogram {
   */
   Json_flex(MEM_ROOT *mem_root, const Json_flex &other, bool *error);
 
-// Make public so we can access from JsonGram. Only temporary until a better solution can be found
+// Make public so we can access from KeyPathHistogram. Only temporary until a better solution can be found
 public:
   /**
     Add value to a JSON bucket
@@ -424,11 +426,11 @@ private:
 
     @return     true on error, false otherwise
   */
-  static bool create_json_bucket(const JsonBucket &bucket,
+  static bool create_json_bucket(const KeyStat &bucket,
                                  Json_array *json_bucket);
 
   /// The buckets for this histogram
-  Mem_root_array<JsonBucket> m_buckets;
+  Mem_root_array<KeyStat> m_buckets;
 };
 
 }  // namespace histograms

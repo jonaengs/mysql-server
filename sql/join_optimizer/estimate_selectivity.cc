@@ -267,8 +267,7 @@ double EstimateSelectivity(THD *thd, Item *condition, string *trace) {
       // JSON_FLEX stuff below
       //////////////////////////////
 
-      // "if" instead of "else if" to allow combinations of FIELD_ITEM x FUNC_ITEM
-      if (left->type() == Item::FUNC_ITEM && right->type() == Item::FUNC_ITEM) {
+      else if (left->type() == Item::FUNC_ITEM && right->type() == Item::FUNC_ITEM) {
         double selectivity = -1.0;
         for (Item_func *field : {down_cast<Item_func *>(left),
                                  down_cast<Item_func *>(right)}) {
@@ -286,11 +285,12 @@ double EstimateSelectivity(THD *thd, Item *condition, string *trace) {
           return selectivity;
         }
       }
-      else if (left->type() == Item::FUNC_ITEM) {
-        EstimateJsonFuncSelectivity(down_cast<Item_func *>(left), trace);
-      } else if (right->type() == Item::FUNC_ITEM) {
-        EstimateJsonFuncSelectivity(down_cast<Item_func *>(right), trace);
-      }
+      // "if" instead of "else if" to allow combinations of FIELD_ITEM x FUNC_ITEM
+      // else if (left->type() == Item::FUNC_ITEM) {
+      //   EstimateJsonFuncSelectivity(down_cast<Item_func *>(left), trace);
+      // } else if (right->type() == Item::FUNC_ITEM) {
+      //   EstimateJsonFuncSelectivity(down_cast<Item_func *>(right), trace);
+      // }
     }
   }
 

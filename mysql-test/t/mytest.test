@@ -7,6 +7,24 @@ CREATE TABLE twitter(j JSON);
 CREATE TABLE twitter2(j JSON);
 
 
+CREATE TABLE test(i INT);
+INSERT INTO test VALUES(1);
+INSERT INTO test VALUES(2);
+INSERT INTO test VALUES(2);
+INSERT INTO test VALUES(3);
+INSERT INTO test VALUES(3);
+INSERT INTO test VALUES(3);
+INSERT INTO test VALUES(5);
+INSERT INTO test VALUES(5);
+INSERT INTO test VALUES(5);
+INSERT INTO test VALUES(5);
+INSERT INTO test VALUES(5);
+INSERT INTO test VALUES(100);
+
+ANALYZE TABLE test UPDATE HISTOGRAM ON i;
+SELECT HISTOGRAM FROM information_schema.column_statistics WHERE TABLE_NAME = 'test' AND COLUMN_NAME = 'i';
+
+
 --echo # INSERT DATA
 INSERT INTO twitter VALUES('{"user": {"followers_count": 10, "id": 1}}');
 INSERT INTO twitter2 VALUES('{"user": {"followers_count": 10, "id": 2}}');

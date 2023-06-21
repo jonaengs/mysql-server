@@ -70,25 +70,25 @@ Json_flex *Json_flex::create(MEM_ROOT *mem_root,
 }
 
 template<typename T>
-JsonGram<T> *JsonGram<T>::create_singlegram(MEM_ROOT *mem_root) {
-    return new (mem_root) JsonGram<T>{JFlexHistType::SINGLETON, Mem_root_array<SingleBucket>(mem_root)};
+KeyPathHistogram<T> *KeyPathHistogram<T>::create_singlegram(MEM_ROOT *mem_root) {
+    return new (mem_root) KeyPathHistogram<T>{JHistogramType::SINGLETON, Mem_root_array<SingleBucket>(mem_root)};
 }
 template<typename T>
-JsonGram<T> *JsonGram<T>::create_equigram(MEM_ROOT *mem_root) {
-    return new (mem_root) JsonGram<T>{JFlexHistType::EQUI_HEIGHT, Mem_root_array<SingleBucket>(mem_root)};
+KeyPathHistogram<T> *KeyPathHistogram<T>::create_equigram(MEM_ROOT *mem_root) {
+    return new (mem_root) KeyPathHistogram<T>{JHistogramType::EQUI_HEIGHT, Mem_root_array<SingleBucket>(mem_root)};
 }
 
 template<>
-JsonGram<BucketString> *JsonGram<BucketString>::duplicate_onto(MEM_ROOT *mem_root) {
+KeyPathHistogram<BucketString> *KeyPathHistogram<BucketString>::duplicate_onto(MEM_ROOT *mem_root) {
   auto *dupe = copy_struct(mem_root);
-  if (dupe->buckets_type == JFlexHistType::SINGLETON) {
+  if (dupe->buckets_type == JHistogramType::SINGLETON) {
     dupe->m_buckets.single_bucks.reserve(m_buckets.single_bucks.size());
 
     for (const auto &bucket : m_buckets.single_bucks) {
         BucketString bs;
         if (bucket.value.dupe(mem_root, &bs)) return nullptr;
 
-        auto duped_bucket = JsonGram<BucketString>::SingleBucket{bs, bucket.frequency};
+        auto duped_bucket = KeyPathHistogram<BucketString>::SingleBucket{bs, bucket.frequency};
         dupe->m_buckets.single_bucks.push_back(duped_bucket);
     }
   } else {
@@ -98,7 +98,7 @@ JsonGram<BucketString> *JsonGram<BucketString>::duplicate_onto(MEM_ROOT *mem_roo
         BucketString bs;
         if (bucket.upper_bound.dupe(mem_root, &bs)) return nullptr;
 
-        auto duped_bucket = JsonGram<BucketString>::EquiBucket{bs, bucket.frequency, bucket.ndv};
+        auto duped_bucket = KeyPathHistogram<BucketString>::EquiBucket{bs, bucket.frequency, bucket.ndv};
         dupe->m_buckets.equi_bucks.push_back(duped_bucket);
     }
   }
@@ -107,9 +107,9 @@ JsonGram<BucketString> *JsonGram<BucketString>::duplicate_onto(MEM_ROOT *mem_roo
 }
 
 template<typename T>
-JsonGram<T> *JsonGram<T>::duplicate_onto(MEM_ROOT *mem_root) {
+KeyPathHistogram<T> *KeyPathHistogram<T>::duplicate_onto(MEM_ROOT *mem_root) {
   auto *dupe = copy_struct(mem_root);
-  if (dupe->buckets_type == JFlexHistType::SINGLETON) {
+  if (dupe->buckets_type == JHistogramType::SINGLETON) {
     dupe->m_buckets.single_bucks.reserve(m_buckets.single_bucks.size());    
     for (const auto &bucket : m_buckets.single_bucks) {
       dupe->m_buckets.single_bucks.emplace_back(bucket);
@@ -149,7 +149,7 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
     // Duplicate min/max data when strings
     maybe_primitive min_val_copy = bucket.min_val;
     maybe_primitive max_val_copy = bucket.max_val;
-    if (bucket.values_type == BucketValueType::STRING) {
+    if (bucket.values_type == BucketValuesType::STRING) {
       (*min_val_copy)._string = BucketString::dupe(mem_root, (*min_val_copy)._string);
       (*max_val_copy)._string = BucketString::dupe(mem_root, (*max_val_copy)._string);
 
@@ -175,23 +175,23 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
     void *json_gram = nullptr;
     if (bucket.histogram) {
       switch (bucket.values_type) {
-        case BucketValueType::INT: {
-          json_gram = static_cast<JsonGram<longlong> *>(bucket.histogram)->duplicate_onto(mem_root);
+        case BucketValuesType::INT: {
+          json_gram = static_cast<KeyPathHistogram<longlong> *>(bucket.histogram)->duplicate_onto(mem_root);
           break;
         }
-        case BucketValueType::FLOAT: {
-          json_gram = static_cast<JsonGram<double> *>(bucket.histogram)->duplicate_onto(mem_root);
+        case BucketValuesType::FLOAT: {
+          json_gram = static_cast<KeyPathHistogram<double> *>(bucket.histogram)->duplicate_onto(mem_root);
           break;
         }
-        case BucketValueType::BOOL: {
-          json_gram = static_cast<JsonGram<bool> *>(bucket.histogram)->duplicate_onto(mem_root);
+        case BucketValuesType::BOOL: {
+          json_gram = static_cast<KeyPathHistogram<bool> *>(bucket.histogram)->duplicate_onto(mem_root);
           break;
         }
-        case BucketValueType::STRING: {
-          json_gram = static_cast<JsonGram<BucketString> *>(bucket.histogram)->duplicate_onto(mem_root);
+        case BucketValuesType::STRING: {
+          json_gram = static_cast<KeyPathHistogram<BucketString> *>(bucket.histogram)->duplicate_onto(mem_root);
           break;
         }
-        case BucketValueType::UNKNOWN: {
+        case BucketValuesType::NOTHING: {
           assert(false);
           *error = true;
           return;
@@ -199,17 +199,17 @@ Json_flex::Json_flex(MEM_ROOT *mem_root, const Json_flex &other,
       }
     }
 
-    JsonBucket copy(string_dup, bucket.frequency, bucket.null_values,
+    KeyStat copy(string_dup, bucket.frequency, bucket.null_values,
                     min_val_copy, max_val_copy, bucket.ndv,
                     bucket.values_type, json_gram);
 
-    if (bucket.values_type != BucketValueType::UNKNOWN) {
+    if (bucket.values_type != BucketValuesType::NOTHING) {
       // If one of the optionals is included, the other should be as well
       assert(bucket.min_val && bucket.max_val);
       assert(copy.min_val && copy.max_val);
       // Copied values should match
       // Except for strings, which contain pointers
-      if (bucket.values_type != BucketValueType::STRING) {
+      if (bucket.values_type != BucketValuesType::STRING) {
         assert((*copy.min_val)._int == (*bucket.min_val)._int);
         assert((*copy.max_val)._int == (*bucket.max_val)._int);
       }
@@ -274,8 +274,8 @@ std::string s1("Test1");
 std::string s2("ABCDEF");
 
 template<typename T>
-bool JsonGram<T>::populate_json_array(Json_array *buckets_array) {
-  if (buckets_type == JFlexHistType::SINGLETON) {
+bool KeyPathHistogram<T>::populate_json_array(Json_array *buckets_array) {
+  if (buckets_type == JHistogramType::SINGLETON) {
     for (const auto &bucket : m_buckets.single_bucks) {
       Json_array json_bucket;
       if (Json_flex::add_value_json_bucket(bucket.value, &json_bucket)) return true;
@@ -302,7 +302,7 @@ bool JsonGram<T>::populate_json_array(Json_array *buckets_array) {
   return false;
 }
 
-bool Json_flex::create_json_bucket(const JsonBucket &bucket,
+bool Json_flex::create_json_bucket(const KeyStat &bucket,
                                       Json_array *json_bucket) {
 
   // Key path
@@ -320,29 +320,29 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
 
   // this is broken for doubles. TODO: FIX
   // Assume that in min_val is defined, then max_val will be as well
-  if (bucket.values_type != BucketValueType::UNKNOWN) {
+  if (bucket.values_type != BucketValuesType::NOTHING) {
     switch (bucket.values_type) {
-      case BucketValueType::INT: {
+      case BucketValuesType::INT: {
         if (add_value_json_bucket((*bucket.min_val)._int, json_bucket)) return true;
         if (add_value_json_bucket((*bucket.max_val)._int, json_bucket)) return true;
         break;
       }
-      case BucketValueType::FLOAT: {
+      case BucketValuesType::FLOAT: {
         if (add_value_json_bucket((*bucket.min_val)._float, json_bucket)) return true;
         if (add_value_json_bucket((*bucket.max_val)._float, json_bucket)) return true;
         break;
       }
-      case BucketValueType::BOOL: {
+      case BucketValuesType::BOOL: {
         if (add_value_json_bucket((*bucket.min_val)._bool, json_bucket)) return true;
         if (add_value_json_bucket((*bucket.max_val)._bool, json_bucket)) return true;
         break;
       }
-      case BucketValueType::STRING: {
+      case BucketValuesType::STRING: {
         if (add_value_json_bucket((*bucket.min_val)._string, json_bucket)) return true;
         if (add_value_json_bucket((*bucket.max_val)._string, json_bucket)) return true;
         break;
       }
-      case BucketValueType::UNKNOWN: {
+      case BucketValuesType::NOTHING: {
         // unreachable
         assert(false);
         return true;
@@ -358,32 +358,32 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
         Json_object json_gram;
 
         // Add type string to object
-        // Cast to JsonGram<void> becuase actual type of json_gram does not matter when calling the get_bucket_type_str method
+        // Cast to KeyPathHistogram<void> becuase actual type of json_gram does not matter when calling the get_bucket_type_str method
         const Json_string json_gram_type(
-          static_cast<JsonGram<void> *>(bucket.histogram)->get_bucket_type_str());
-        if (json_gram.add_clone(JsonGram<void>::type_str(), &json_gram_type))
+          static_cast<KeyPathHistogram<void> *>(bucket.histogram)->get_bucket_type_str());
+        if (json_gram.add_clone(KeyPathHistogram<void>::type_str(), &json_gram_type))
           return true;
 
         // Populate buckets array
         Json_array buckets_arr;
         switch (bucket.values_type) {
-          case BucketValueType::INT: {
-            static_cast<JsonGram<longlong> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+          case BucketValuesType::INT: {
+            static_cast<KeyPathHistogram<longlong> *>(bucket.histogram)->populate_json_array(&buckets_arr);
             break;
           }
-          case BucketValueType::FLOAT: {
-            static_cast<JsonGram<double> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+          case BucketValuesType::FLOAT: {
+            static_cast<KeyPathHistogram<double> *>(bucket.histogram)->populate_json_array(&buckets_arr);
             break;
           }
-          case BucketValueType::BOOL: {
-            static_cast<JsonGram<bool> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+          case BucketValuesType::BOOL: {
+            static_cast<KeyPathHistogram<bool> *>(bucket.histogram)->populate_json_array(&buckets_arr);
             break;
           }
-          case BucketValueType::STRING: {
-            static_cast<JsonGram<BucketString> *>(bucket.histogram)->populate_json_array(&buckets_arr);
+          case BucketValuesType::STRING: {
+            static_cast<KeyPathHistogram<BucketString> *>(bucket.histogram)->populate_json_array(&buckets_arr);
             break;
           }
-          case BucketValueType::UNKNOWN: {
+          case BucketValuesType::NOTHING: {
             // again, unreachable
             assert(false);
             return true;
@@ -394,7 +394,7 @@ bool Json_flex::create_json_bucket(const JsonBucket &bucket,
         if (json_gram.add_clone(buckets_str(), &buckets_arr)) return true;
 
         // Add mean rest frequency if set
-        auto *void_jgram = static_cast<JsonGram<void> *>(bucket.histogram);
+        auto *void_jgram = static_cast<KeyPathHistogram<void> *>(bucket.histogram);
         if (void_jgram->rest_mean_frequency) {
           const Json_double mean_frequency(*(void_jgram->rest_mean_frequency));
           if (json_gram.add_clone(void_jgram->rest_frequency_string(), &mean_frequency)) {
@@ -450,18 +450,18 @@ std::string Json_flex::histogram_type_to_str() const {
 }
 
 template<typename T>
-bool JsonGram<T>::json_to_json_gram(const Json_array *buckets_array, Json_flex *histogram, Error_context *context) {
+bool KeyPathHistogram<T>::json_to_json_gram(const Json_array *buckets_array, Json_flex *histogram, Error_context *context) {
   // determine number of buckets
   size_t num_buckets = buckets_array->size();
 
   // reserve space for the buckets on mem_root
-  if (buckets_type == JFlexHistType::SINGLETON) {
+  if (buckets_type == JHistogramType::SINGLETON) {
     m_buckets.single_bucks.reserve(num_buckets);
   } else {
     m_buckets.equi_bucks.reserve(num_buckets);
   }
 
-  // Copy bucket contents into the JsonGram
+  // Copy bucket contents into the KeyPathHistogram
   // Loop over buckets, copying one value at a time
   for (size_t i = 0; i < num_buckets; ++i) {
     const Json_dom *bucket_dom = (*buckets_array)[i];
@@ -474,7 +474,7 @@ bool JsonGram<T>::json_to_json_gram(const Json_array *buckets_array, Json_flex *
       return true;
     }
     const Json_array *bucket = down_cast<const Json_array *>(bucket_dom);
-    if (buckets_type == JFlexHistType::SINGLETON) {
+    if (buckets_type == JHistogramType::SINGLETON) {
       assert(bucket->size() == 2);
     } else {
       assert(bucket->size() == 3);
@@ -491,7 +491,7 @@ bool JsonGram<T>::json_to_json_gram(const Json_array *buckets_array, Json_flex *
     if (histogram->extract_json_dom_value(frequency_dom, &frequency, context)) return true;
 
           
-    if (buckets_type == JFlexHistType::SINGLETON) {
+    if (buckets_type == JHistogramType::SINGLETON) {
       // Create bucket and add to array
       SingleBucket single_bucket = SingleBucket{value, frequency};
       assert(m_buckets.single_bucks.capacity() > m_buckets.single_bucks.size());
@@ -573,7 +573,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
     std::optional<json_primitive> min_val_opt;
     std::optional<json_primitive> max_val_opt;
     std::optional<longlong> ndv_opt;
-    BucketValueType values_type = BucketValueType::UNKNOWN;
+    BucketValuesType values_type = BucketValuesType::NOTHING;
     if (bucket->size() >= allowed_size_wo_opts + 2) {
       // GET FOURTH BUCKET ITEM: min_val
       // GET FIFTH BUCKET ITEM:  max_val
@@ -589,17 +589,17 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       if (min_val_dom->json_type() == enum_json_type::J_DOUBLE) {
         if (extract_json_dom_value(min_val_dom, &(min_val._float), context)) return true;
         if (extract_json_dom_value(max_val_dom, &(max_val._float), context)) return true;
-        values_type = BucketValueType::FLOAT;
+        values_type = BucketValuesType::FLOAT;
       } else if (min_val_dom->json_type() == enum_json_type::J_BOOLEAN) {
         if (extract_json_dom_value(min_val_dom, &min_val._bool, context)) return true;
         if (extract_json_dom_value(max_val_dom, &max_val._bool, context)) return true;
-        values_type = BucketValueType::BOOL;
+        values_type = BucketValuesType::BOOL;
       }
       else if (min_val_dom->json_type() == enum_json_type::J_INT ||
                  min_val_dom->json_type() == enum_json_type::J_UINT) {
         if (extract_json_dom_value(min_val_dom, &min_val._int, context)) return true;
         if (extract_json_dom_value(max_val_dom, &max_val._int, context)) return true;
-        values_type = BucketValueType::INT;
+        values_type = BucketValuesType::INT;
       }
       else if (min_val_dom->json_type() == enum_json_type::J_STRING ||
                min_val_dom->json_type() == enum_json_type::J_OPAQUE) {
@@ -609,7 +609,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
         if (extract_json_dom_value(max_val_dom, &max_val_str, context)) return true;
         min_val._string = BucketString::from_string(min_val_str);
         max_val._string = BucketString::from_string(max_val_str);
-        values_type = BucketValueType::STRING;
+        values_type = BucketValuesType::STRING;
       }
       else {
         assert(false);
@@ -623,7 +623,7 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
 
       assert(min_val_opt);
       assert(max_val_opt);
-      assert(values_type != BucketValueType::UNKNOWN);
+      assert(values_type != BucketValuesType::NOTHING);
     }
 
     if (bucket->size() >= allowed_size_wo_opts + 3) {
@@ -636,15 +636,15 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
 
     void *json_gram = nullptr;
     if (bucket->size() >= allowed_size_wo_opts + 4) {
-      // GET SEVENTH BUCKET: JsonGram
-      assert(values_type != BucketValueType::UNKNOWN);
+      // GET SEVENTH BUCKET: KeyPathHistogram
+      assert(values_type != BucketValuesType::NOTHING);
 
       // Missing type checks inbound
       const Json_dom *histogram_object_dom = (*bucket)[6];
       const Json_object *histogram_object = down_cast<const Json_object *>(histogram_object_dom);
-      const Json_dom *hist_type_dom = histogram_object->get(JsonGram<void>::type_str());
+      const Json_dom *hist_type_dom = histogram_object->get(KeyPathHistogram<void>::type_str());
       if (hist_type_dom == nullptr) {
-        context->report_missing_attribute(JsonGram<void>::type_str());
+        context->report_missing_attribute(KeyPathHistogram<void>::type_str());
         return true;
       }
       const Json_dom *hist_buckets_dom = histogram_object->get(buckets_str());
@@ -657,66 +657,66 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       const Json_string *hist_type_str = down_cast<const Json_string *>(hist_type_dom);
       assert(hist_type_str->value() == "singleton" || hist_type_str->value() == "equi-height");
       auto bucket_type = hist_type_str->value() == "singleton" ? 
-        JFlexHistType::SINGLETON : JFlexHistType::EQUI_HEIGHT;
+        JHistogramType::SINGLETON : JHistogramType::EQUI_HEIGHT;
 
 
-      // Create JsonGram. T is determined from values_type
+      // Create KeyPathHistogram. T is determined from values_type
       const Json_array *buckets_array = down_cast<const Json_array *>(hist_buckets_dom);
       switch (values_type) {
-        case BucketValueType::INT: {
-          if (bucket_type == JFlexHistType::SINGLETON) {
-            json_gram = static_cast<void *>(JsonGram<longlong>::create_singlegram(get_mem_root()));
+        case BucketValuesType::INT: {
+          if (bucket_type == JHistogramType::SINGLETON) {
+            json_gram = static_cast<void *>(KeyPathHistogram<longlong>::create_singlegram(get_mem_root()));
           } else {
-            json_gram = static_cast<void *>(JsonGram<longlong>::create_equigram(get_mem_root()));
+            json_gram = static_cast<void *>(KeyPathHistogram<longlong>::create_equigram(get_mem_root()));
           }
-          static_cast<JsonGram<longlong> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          static_cast<KeyPathHistogram<longlong> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
           break;
         }
-        case BucketValueType::FLOAT: {
-          if (bucket_type == JFlexHistType::SINGLETON) {
-            json_gram = static_cast<void *>(JsonGram<double>::create_singlegram(get_mem_root()));
+        case BucketValuesType::FLOAT: {
+          if (bucket_type == JHistogramType::SINGLETON) {
+            json_gram = static_cast<void *>(KeyPathHistogram<double>::create_singlegram(get_mem_root()));
           } else {
-            json_gram = static_cast<void *>(JsonGram<double>::create_equigram(get_mem_root()));
+            json_gram = static_cast<void *>(KeyPathHistogram<double>::create_equigram(get_mem_root()));
           }
-          static_cast<JsonGram<double> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          static_cast<KeyPathHistogram<double> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
           break;
         }
-        case BucketValueType::BOOL: {
-          if (bucket_type == JFlexHistType::SINGLETON) {
-            json_gram = static_cast<void *>(JsonGram<bool>::create_singlegram(get_mem_root()));
+        case BucketValuesType::BOOL: {
+          if (bucket_type == JHistogramType::SINGLETON) {
+            json_gram = static_cast<void *>(KeyPathHistogram<bool>::create_singlegram(get_mem_root()));
           } else {
-            json_gram = static_cast<void *>(JsonGram<bool>::create_equigram(get_mem_root()));
+            json_gram = static_cast<void *>(KeyPathHistogram<bool>::create_equigram(get_mem_root()));
           }
-          static_cast<JsonGram<bool> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          static_cast<KeyPathHistogram<bool> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
           break;
         }
-        case BucketValueType::STRING: {
-          if (bucket_type == JFlexHistType::SINGLETON) {
-            json_gram = static_cast<void *>(JsonGram<BucketString>::create_singlegram(get_mem_root()));
+        case BucketValuesType::STRING: {
+          if (bucket_type == JHistogramType::SINGLETON) {
+            json_gram = static_cast<void *>(KeyPathHistogram<BucketString>::create_singlegram(get_mem_root()));
           } else {
-            json_gram = static_cast<void *>(JsonGram<BucketString>::create_equigram(get_mem_root()));
+            json_gram = static_cast<void *>(KeyPathHistogram<BucketString>::create_equigram(get_mem_root()));
           }
-          static_cast<JsonGram<BucketString> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
+          static_cast<KeyPathHistogram<BucketString> *>(json_gram)->json_to_json_gram(buckets_array, this, context);
           break;
         }
-        case BucketValueType::UNKNOWN: {
+        case BucketValuesType::NOTHING: {
           assert(false);
           context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
           return true;
         }
       }
-      const Json_dom *rest_frequency_dom = histogram_object->get(JsonGram<void>::rest_frequency_string());
+      const Json_dom *rest_frequency_dom = histogram_object->get(KeyPathHistogram<void>::rest_frequency_string());
       if (rest_frequency_dom) {
         // TODO: Proper err here
         assert(rest_frequency_dom->json_type() == enum_json_type::J_DOUBLE);
         const Json_double *rest_frequncy_json = down_cast<const Json_double *>(rest_frequency_dom);
-        static_cast<JsonGram<void> *>(json_gram)->rest_mean_frequency = rest_frequncy_json->value();
+        static_cast<KeyPathHistogram<void> *>(json_gram)->rest_mean_frequency = rest_frequncy_json->value();
       }
     }
     
 
     // STORE BUCKET IN HISTOGRAM
-    JsonBucket hist_bucket = JsonBucket(key_path, frequency, null_values, min_val_opt, max_val_opt, ndv_opt, values_type, json_gram);
+    KeyStat hist_bucket = KeyStat(key_path, frequency, null_values, min_val_opt, max_val_opt, ndv_opt, values_type, json_gram);
     assert(m_buckets.capacity() > m_buckets.size());
     m_buckets.push_back(hist_bucket);
   }
@@ -995,9 +995,6 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
     // Alternatively, one can use JSON_VALUE with some other default than NULL
     // Catching these two cases here won't be fun at all.
 
-    // IS NULL checks whether the path exists and leads to a null value
-    // IS NOT NULL checks whether the path exists and does not lead to a null value
-
     if (func->func_name() == std::string("json_value")) {
       // TODO: Check for default value not being null
       // if (func->arg_count >= 4 && func->children[3]...)
@@ -1120,7 +1117,7 @@ size_t Json_flex::get_ndv(const Item_func *func) const {
     const String arg_path = String(path_builder.c_str(), path_builder.length(), m_charset);
 
     if (auto bucketOpt = find_bucket(arg_path)) {
-      const JsonBucket *bucket = *bucketOpt;
+      const KeyStat *bucket = *bucketOpt;
       if (bucket->ndv) {
         total_ndv += (*bucket->ndv);
       }
@@ -1242,8 +1239,8 @@ outer_loop:
   return false;
 }
 
-std::optional<const JsonBucket *> Json_flex::find_bucket(const String &path) const {
-  for (const JsonBucket *bucket = m_buckets.begin(); bucket != m_buckets.end(); bucket++) {
+std::optional<const KeyStat *> Json_flex::find_bucket(const String &path) const {
+  for (const KeyStat *bucket = m_buckets.begin(); bucket != m_buckets.end(); bucket++) {
     if (stringcmp(&path, &bucket->key_path) == 0) {
       return bucket;
     }
@@ -1259,7 +1256,7 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const long
 template<>
 Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const double cmp_val) const {
   if (auto bucketOpt = find_bucket(path)) {
-    const JsonBucket *bucket = *bucketOpt;
+    const KeyStat *bucket = *bucketOpt;
     double base_freq = bucket->frequency * (1.0 - bucket->null_values);
 
     if (bucket->min_val && bucket->max_val) {
@@ -1275,18 +1272,18 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const doub
     // and lookup value is a valid integer. Then we can do an integer lookup in the 
     // bucket instead
     // TODO: Should probably check that cmp_val is inside the range of a longlong
-    if (bucket->values_type == BucketValueType::INT && std::ceil(cmp_val) == cmp_val) {
+    if (bucket->values_type == BucketValuesType::INT && std::ceil(cmp_val) == cmp_val) {
       return lookup_bucket(path, (longlong) cmp_val);
     }
 
     // Lookup cmp_val in histogram
     // assumes histogram buckets are sorted in ascending order
     if (bucket->histogram) {
-      assert(bucket->values_type == BucketValueType::FLOAT);
-      auto histogram = static_cast<JsonGram<double> *>(bucket->histogram);
+      assert(bucket->values_type == BucketValuesType::FLOAT);
+      auto histogram = static_cast<KeyPathHistogram<double> *>(bucket->histogram);
 
       double cumulative = 0;
-      if (histogram->buckets_type == JFlexHistType::SINGLETON) {
+      if (histogram->buckets_type == JHistogramType::SINGLETON) {
         for (const auto &jg_buck : histogram->m_buckets.single_bucks) {
           if (jg_buck.value == cmp_val) {
             return lookup_result{
@@ -1337,7 +1334,7 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const doub
 template<>
 Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, String cmp_val) const {
   if (auto bucketOpt = find_bucket(path)) {
-    const JsonBucket *bucket = *bucketOpt;
+    const KeyStat *bucket = *bucketOpt;
     double base_freq = bucket->frequency * (1.0 - bucket->null_values);
 
     // Check if cmp_val out of range of bucket values
@@ -1353,11 +1350,11 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, String cmp
     }
 
     if (bucket->histogram) {
-      assert(bucket->values_type == BucketValueType::STRING);
-      auto histogram = static_cast<JsonGram<BucketString> *>(bucket->histogram);
+      assert(bucket->values_type == BucketValuesType::STRING);
+      auto histogram = static_cast<KeyPathHistogram<BucketString> *>(bucket->histogram);
 
       double cumulative = 0;
-      if (histogram->buckets_type == JFlexHistType::SINGLETON) {
+      if (histogram->buckets_type == JHistogramType::SINGLETON) {
         // Singleton histograms for floats is pretty sussy, but ok
         for (const auto &jg_buck : histogram->m_buckets.single_bucks) {
           String buck_str = jg_buck.value.to_string();
@@ -1403,7 +1400,7 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, String cmp
 template<>
 Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const bool cmp_val) const {
   if (auto bucketOpt = find_bucket(path)) {
-    const JsonBucket *bucket = *bucketOpt;
+    const KeyStat *bucket = *bucketOpt;
     double base_freq = bucket->frequency * (1.0 - bucket->null_values);
 
     if (bucket->min_val && bucket->max_val) {
@@ -1418,9 +1415,9 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const bool
     // Lookup cmp_val in histogram
     // assumes histogram buckets are sorted in ascending order
     if (bucket->histogram) {
-      auto histogram = static_cast<JsonGram<bool> *>(bucket->histogram);
+      auto histogram = static_cast<KeyPathHistogram<bool> *>(bucket->histogram);
 
-      assert(histogram->buckets_type == JFlexHistType::SINGLETON); // Say no to equi-height histograms for boolean values
+      assert(histogram->buckets_type == JHistogramType::SINGLETON); // Say no to equi-height histograms for boolean values
 
       if (histogram->m_buckets.single_bucks.size() >= 1) {
         auto first = histogram->m_buckets.single_bucks[0];
@@ -1439,13 +1436,13 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const bool
 template<>
 Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const longlong cmp_val) const {
   if (auto bucketOpt = find_bucket(path)) {
-    const JsonBucket *bucket = *bucketOpt;
+    const KeyStat *bucket = *bucketOpt;
     double base_freq = bucket->frequency * (1.0 - bucket->null_values);
 
     // If float and int have the same type identifier (key path type suffix), then it
     // is possible that an integer comparand was used for a key path which actually holds float values
     // In this case, we convert the comparand to float and lookup that value instead:
-    if (bucket->values_type == BucketValueType::FLOAT) {
+    if (bucket->values_type == BucketValuesType::FLOAT) {
       return lookup_bucket(path, (double) cmp_val);
     }
 
@@ -1462,11 +1459,11 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const long
     // Lookup cmp_val in histogram
     // assumes histogram buckets are sorted in ascending order
     if (bucket->histogram) {
-      assert(bucket->values_type == BucketValueType::INT);
-      auto histogram = static_cast<JsonGram<longlong> *>(bucket->histogram);
+      assert(bucket->values_type == BucketValuesType::INT);
+      auto histogram = static_cast<KeyPathHistogram<longlong> *>(bucket->histogram);
 
       double cumulative = 0;
-      if (histogram->buckets_type == JFlexHistType::SINGLETON) {
+      if (histogram->buckets_type == JHistogramType::SINGLETON) {
         for (const auto &jg_buck : histogram->m_buckets.single_bucks) {
           if (jg_buck.value == cmp_val) {
             return lookup_result{
@@ -1500,7 +1497,6 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const long
       }
     }
 
-    // 
     if (bucket->ndv) {
       return lookup_result{base_freq / (*bucket->ndv), base_freq * 0.3, base_freq * 0.3};
     }
@@ -1514,7 +1510,7 @@ Json_flex::lookup_result Json_flex::lookup_bucket(const String &path, const long
 
 Json_flex::lookup_result Json_flex::lookup_bucket(const String &path) const {
   if (auto bucketOpt = find_bucket(path)) {
-    const JsonBucket *bucket = *bucketOpt;
+    const KeyStat *bucket = *bucketOpt;
     double base_freq = bucket->frequency * (1.0 - bucket->null_values);
     
     if (bucket->ndv) {
