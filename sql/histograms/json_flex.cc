@@ -582,6 +582,12 @@ bool Json_flex::json_to_histogram(const Json_object &json_object,
       json_primitive min_val;
       json_primitive max_val;
 
+      // TODO: Handle the case where one or two values are being interpreted
+      // as integers because they have no '.' in them, while being intended to be
+      // interpreted as floats. Currently this leads to an error (albeit a *very* rare one). 
+      // Alternatively, handle this in the serializer -- detect that a field is 
+      // supposed to be floats and stop it from accidentally writing an integer. 
+      // If MySQL generated the data itself, this bug would likely go away. 
       if (min_val_dom->json_type() != max_val_dom->json_type()) {
         context->report_node(bucket_dom, Message::JSON_WRONG_ATTRIBUTE_TYPE);
         return true;
@@ -965,24 +971,27 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
   
 
 
-  // Record whether json_unquote is called. It's the only wrapper function currently supported.
-  // Its absence means we don't have information about the expected type of the path terminal
+  // Check and store whether the function is not doing any unquoting.
+  // This is important, because the statistics are not collected with unquoting in mind,
+  // so they may not be accurate when JSON_UNQUOTE is involved. 
   // TODO: Use func->functype() and Item_func::Functype enum instead. The enum seems to currently be missing a few of the functions we're checking against
-  bool raw_value_returned = func->func_name() == std::string("json_unquote")
-                         || func->func_name() == std::string("json_value");
+  bool values_are_unquoted = func->func_name() == std::string("json_unquote");
   // TODO: Support for JSON_MEMBEROF and JSON_CONTAINS
   
   
   // Build query path
-  Item *json_path_arg;
-  get_json_func_path_item(func, &json_path_arg);
-  std::string path_builder("");
-  if (
+  String arg_path;
+  {
+    Item *json_path_arg;
+    get_json_func_path_item(func, &json_path_arg);
+    std::string path_builder("");
     auto qstring_example_comparand = comparand_count > 0 ? comparands[0] : nullptr;
-    build_histogram_query_string(json_path_arg, qstring_example_comparand, 
-                                 raw_value_returned, path_builder)
-  ) return true;
-  const String arg_path = String(path_builder.c_str(), path_builder.length(), m_charset);
+    if (
+      build_histogram_query_string(json_path_arg, qstring_example_comparand, 
+                                  !values_are_unquoted, path_builder)
+    ) return true;
+    arg_path = String(path_builder.c_str(), path_builder.length(), m_charset);
+  }
 
 
   if (comparand_count == 0) {
@@ -1026,7 +1035,7 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
   // If json_unquote was called, and the comparand is a const, 
   // then we know that we have an actual value that we can lookup in specifically
   // in the histogram data. Otherwise, we can only look up the generated query string.
-  } else if (raw_value_returned && comparands[0]->const_item()) {
+  } else if (!values_are_unquoted && comparands[0]->const_item()) {
     // Assume that if one of the items are const, then all are. This may not actually be the case (can you do "t1.col1 in (1, 2, t2.col2)"?).
     if (comparand_count > 1) {
       *selectivity = multi_val_dispatch(this, arg_path, op, comparands, comparand_count);
@@ -1092,9 +1101,8 @@ const std::string KEY_SEP = ".";
 
 size_t Json_flex::get_ndv(const Item_func *func) const {
   // We don't want to deal with 
-  bool comparison_is_unquoted = func->func_name() == std::string("json_unquote")
-                                || func->func_name() == std::string("json_value");
-  if (!comparison_is_unquoted) return -1;
+  bool comparison_is_unquoted = func->func_name() == std::string("json_unquote");
+  if (comparison_is_unquoted) return -1;
 
   // If int and float get separate suffixes, they must be added here as well
   size_t total_ndv = 0;

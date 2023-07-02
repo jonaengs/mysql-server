@@ -53,8 +53,16 @@ USING DATA '{
 
 # SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 'twitter' AND COLUMN_NAME = 'j';
 SET OPTIMIZER_TRACE = "enabled=on";
-SET @@optimizer_switch="hypergraph_optimizer=on";
-SET @@explain_format=TREE;
+# SET @@optimizer_switch="hypergraph_optimizer=on";
+# SET @@explain_format=TREE;
+
+EXPLAIN SELECT 
+  * 
+FROM 
+  twitter
+WHERE 
+  twitter.j->"$.user.followers_count" > 0
+  AND twitter.j->>"$.user.aaaa" = 1;
 
 --echo
 --echo
@@ -66,9 +74,9 @@ FROM
   INNER JOIN
   twitter2 
   ON 
-  twitter.j->>"$.user.followers_count" = twitter2.j->>"$.user.followers_count"
+  twitter.j->"$.user.followers_count" = twitter2.j->"$.user.followers_count"
 WHERE 
-  twitter.j->>"$.user.followers_count" > 0 AND twitter2.j->>"$.user.id" = 2
+  twitter.j->"$.user.followers_count" > 0 AND twitter2.j->"$.user.id" = 2
 ;
 --echo
 --echo
@@ -85,9 +93,9 @@ FROM
   INNER JOIN
   twitter2 
   ON 
-  twitter.j->>"$.user.followers_count" = twitter2.j->>"$.user.followers_count"
+  twitter.j->"$.user.followers_count" = twitter2.j->"$.user.followers_count"
 WHERE 
-  twitter.j->>"$.user.followers_count" > 0 AND twitter2.j->>"$.user.id" = 2
+  twitter.j->>"$.user.followers_count" > 0 AND twitter2.j->"$.user.id" = 2
 ;
 SELECT TRACE FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
