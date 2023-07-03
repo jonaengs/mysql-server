@@ -3377,17 +3377,10 @@ static bool check_optimizer_switch(sys_var *, THD *thd [[maybe_unused]],
       var->save_result.ulonglong_value |= OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER;
     }
   } else if (!current_hypergraph_optimizer && want_hypergraph_optimizer) {
-#ifdef WITH_HYPERGRAPH_OPTIMIZER
     // Allow, with a warning.
     push_warning(thd, Sql_condition::SL_WARNING, ER_WARN_DEPRECATED_SYNTAX,
                  ER_THD(thd, ER_WARN_HYPERGRAPH_EXPERIMENTAL));
     return false;
-#else
-    // Disallow; the hypergraph optimizer is not ready for production yet.
-    my_error(ER_HYPERGRAPH_NOT_SUPPORTED_YET, MYF(0),
-             "use in non-debug builds");
-    return true;
-#endif
   }
   return false;
 }
