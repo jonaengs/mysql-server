@@ -175,18 +175,32 @@ static double EstimateJsonFuncSelectivity(Item_func *func, string *trace) {
       }
       const histograms::Json_flex *json_flex = down_cast<const histograms::Json_flex *>(histogram);
 
-      const double distinct_values = json_flex->get_ndv(func);
-      if (distinct_values <= 0) return -1;
+      const ssize_t _distinct_values = json_flex->get_ndv(func);
+
+      if (_distinct_values < 0) {
+        if (trace != nullptr) {
+          *trace += StringPrintf(
+              " - Tried estimating selectivity for JSON (I hope) function %s"
+              " over field '%s.%s'"
+              " from histogram, but got error (%ld returned).\n",
+              func->func_name(),
+              field->table->alias, field->field_name,
+              _distinct_values);
+        }
+        return -1;
+      }
+      const double distinct_values = (double) _distinct_values;
+
       
       const double selectivity = 1.0 / std::max(1.0, distinct_values);
       if (trace != nullptr) {
         *trace += StringPrintf(
             " - estimating selectivity %f for JSON (I hope) function %s"
             " over field '%s.%s'"
-            " from histogram showing %.1f distinct values.\n",
+            " from histogram showing %f (%ld) distinct values.\n",
             selectivity, func->func_name(),
             field->table->alias, field->field_name,
-            distinct_values);
+            distinct_values, _distinct_values);
       }
 
       return selectivity;

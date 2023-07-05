@@ -301,7 +301,7 @@ class Json_flex : public Histogram {
   // I'm also kind of assuming that join conditions are always using key paths that lead to primitive values.
   //    This should hold true almost all of the time (can you even do a join on a json object or json array?),
   //    but it is possible that it won't hold and I'm not doing any checking to handle those cases right now.
-  size_t get_ndv(const Item_func *func) const;
+  ssize_t get_ndv(const Item_func *func) const;
 
   /**
     Returns the histogram type as a readable string.

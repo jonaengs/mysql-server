@@ -1099,13 +1099,15 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
 const std::string TYPE_SEP = "_";
 const std::string KEY_SEP = ".";
 
-size_t Json_flex::get_ndv(const Item_func *func) const {
+ssize_t Json_flex::get_ndv(const Item_func *func) const {
   // We don't want to deal with 
   bool comparison_is_unquoted = func->func_name() == std::string("json_unquote");
   if (comparison_is_unquoted) return -1;
 
+  // Because we don't know the type of the comparand, we add together
+  // the ndv of each unique type
   // If int and float get separate suffixes, they must be added here as well
-  size_t total_ndv = 0;
+  ssize_t total_ndv = 0; // Assuming this ssize_t won't overflow from size_t addition is pretty safe in this case, I would think
   for (const std::string suffix : {"num", "bool", "str"})
   {
     // This is not exactly the most efficient way of doing this. But it's very simple.
