@@ -980,11 +980,11 @@ bool Json_flex::get_selectivity(Item_func *func, Item **comparands, size_t compa
   
   
   // Build query path
+  std::string path_builder("");
   String arg_path;
   {
     Item *json_path_arg;
     get_json_func_path_item(func, &json_path_arg);
-    std::string path_builder("");
     auto qstring_example_comparand = comparand_count > 0 ? comparands[0] : nullptr;
     if (
       build_histogram_query_string(json_path_arg, qstring_example_comparand, 

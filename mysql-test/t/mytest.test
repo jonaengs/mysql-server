@@ -3,43 +3,18 @@
 --echo #########################################################################
 
 --echo # CREATE TABLE
-CREATE TABLE twitter(j JSON);
-CREATE TABLE twitter2(j JSON);
+create table listings (j JSON);
+create table reviews (j JSON);
+create table calendar (j JSON);
+create table neighbourhoods (j JSON);
 
-
-CREATE TABLE test(i INT);
-INSERT INTO test VALUES(1);
-INSERT INTO test VALUES(2);
-INSERT INTO test VALUES(2);
-INSERT INTO test VALUES(3);
-INSERT INTO test VALUES(3);
-INSERT INTO test VALUES(3);
-INSERT INTO test VALUES(5);
-INSERT INTO test VALUES(5);
-INSERT INTO test VALUES(5);
-INSERT INTO test VALUES(5);
-INSERT INTO test VALUES(5);
-INSERT INTO test VALUES(100);
-
-ANALYZE TABLE test UPDATE HISTOGRAM ON i;
-SELECT HISTOGRAM FROM information_schema.column_statistics WHERE TABLE_NAME = 'test' AND COLUMN_NAME = 'i';
-
-
---echo # INSERT DATA
-INSERT INTO twitter VALUES('{"user": {"followers_count": 10, "id": 1}}');
-INSERT INTO twitter2 VALUES('{"user": {"followers_count": 10, "id": 2}}');
-
-
-
-ANALYZE TABLE twitter UPDATE HISTOGRAM ON j
+ANALYZE TABLE calendar UPDATE HISTOGRAM ON j
 USING DATA '{
   "buckets": [
     [
-      "base64:type254:dXNlcl9vYmouZm9sbG93ZXJzX2NvdW50X251bQ==",
-      1.0, 0.0, 0, 1605806, 3940,
-      { "type": "equi-height",
-        "buckets": [[18, 0.041606718148985526, 19], [32, 0.0440203188771765, 14], [45, 0.04214111636374314, 13], [55, 0.04117215256775406, 10], [66, 0.040044631059694046, 11], [79, 0.04217635141087001, 13], [92, 0.040367618991690404, 13], [107, 0.04060251930586957, 15], [121, 0.04297501247907919, 14], [137, 0.04245823178788501, 16], [154, 0.04126611269342573, 17], [174, 0.040426344070235196, 20], [195, 0.04126024018557125, 21], [221, 0.04236427166221335, 26], [252, 0.04107819244208239, 31], [280, 0.0406788619079778, 28], [317, 0.04023255131103738, 37], [370, 0.04002114102827613, 53], [430, 0.0405379217194703, 60], [515, 0.0402266788031829, 85], [649, 0.04069647943154124, 134], [873, 0.040027013536130605, 224], [1365, 0.040027013536130605, 471], [4907, 0.04000352350471269, 1492], [1605806, 0.013588983175264998, 1103]]
-      }
+      "base64:type254:Y19jdXN0a2V5",
+      1.0,
+      0.0
     ]
   ],
   "histogram-type": "json-flex",
@@ -51,52 +26,83 @@ USING DATA '{
   "sampling-rate": 0.0
 }';
 
-# SELECT * FROM information_schema.column_statistics WHERE TABLE_NAME = 'twitter' AND COLUMN_NAME = 'j';
-SET OPTIMIZER_TRACE = "enabled=on";
-# SET @@optimizer_switch="hypergraph_optimizer=on";
-# SET @@explain_format=TREE;
+ANALYZE TABLE listings UPDATE HISTOGRAM ON j
+USING DATA '{
+  "buckets": [
+    [
+      "base64:type254:Y19jdXN0a2V5",
+      1.0,
+      0.0
+    ]
+  ],
+  "histogram-type": "json-flex",
+  "data-type": "json",
+  "null-values": 0.0,
+  "last-updated": "2023-02-27 16:13:14.0",
+  "number-of-buckets-specified": 1024,
+  "collation-id": 255,
+  "sampling-rate": 0.0
+}';
 
-EXPLAIN SELECT 
-  * 
-FROM 
-  twitter
-WHERE 
-  twitter.j->"$.user.followers_count" > 0
-  AND twitter.j->>"$.user.aaaa" = 1;
+ANALYZE TABLE reviews UPDATE HISTOGRAM ON j
+USING DATA '{
+  "buckets": [
+    [
+      "base64:type254:Y19jdXN0a2V5",
+      1.0,
+      0.0
+    ]
+  ],
+  "histogram-type": "json-flex",
+  "data-type": "json",
+  "null-values": 0.0,
+  "last-updated": "2023-02-27 16:13:14.0",
+  "number-of-buckets-specified": 1024,
+  "collation-id": 255,
+  "sampling-rate": 0.0
+}';
 
---echo
---echo
---echo 
-SELECT 
-  * 
-FROM 
-  twitter
-  INNER JOIN
-  twitter2 
-  ON 
-  twitter.j->"$.user.followers_count" = twitter2.j->"$.user.followers_count"
-WHERE 
-  twitter.j->"$.user.followers_count" > 0 AND twitter2.j->"$.user.id" = 2
+SELECT candidate_listings.listing_id, recent_reviews.review_id
+FROM (
+    SELECT 
+        listings.j->"$.id" AS listing_id,
+        listings.j AS complete_listing
+    FROM listings, calendar, neighbourhoods
+    WHERE 
+        -- Join conditions
+        listings.j->"$.id" = calendar.j->"$.listing_id"
+        AND 
+        listings.j->"$.neighbourhood_cleansed" = neighbourhoods.j->"$.neighbourhood"
+
+        -- Listing predicates
+        AND listings.j->"$.review_scores_rating" >= 4
+        AND listings.j->"$.bedrooms" >= 3
+        -- AND listings.j->"$.accommodates" >= 6
+        AND listings.j->"$.host_is_superhost" = "t"
+
+        -- Calendar predicates
+        AND calendar.j->"$.available" = "t"
+        AND calendar.j->"$.date" = "2023-12-12"
+        AND calendar.j->"$.minimum_nights" = 1
+
+        -- Neighbourhood predicates
+        AND (
+            neighbourhoods.j->"$.neighbourhood_group" = "Lake City"
+            OR 
+            neighbourhoods.j->"$.neighbourhood_group" = "Capitol Hill"
+        )
+) AS candidate_listings
+INNER JOIN (
+    SELECT 
+        reviews.j->"$.listing_id" AS listing_id, 
+        reviews.j->"$.id" AS review_id,
+        reviews.j AS complete_review,
+        row_number() OVER w AS row_n
+    FROM reviews
+    WINDOW w AS (PARTITION BY reviews.j->"$.listing_id" ORDER BY reviews.j->"$.date" DESC)
+) AS recent_reviews
+ON 
+    recent_reviews.listing_id = candidate_listings.listing_id
+WHERE recent_reviews.row_n <= 3
 ;
---echo
---echo
---echo 
-SELECT TRACE FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-
---echo
---echo
---echo 
-EXPLAIN SELECT 
-  * 
-FROM 
-  twitter
-  INNER JOIN
-  twitter2 
-  ON 
-  twitter.j->"$.user.followers_count" = twitter2.j->"$.user.followers_count"
-WHERE 
-  twitter.j->>"$.user.followers_count" > 0 AND twitter2.j->"$.user.id" = 2
-;
-SELECT TRACE FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
-SELECT JSON_EXTRACT(TRACE, "$**.filtering_effect") FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
