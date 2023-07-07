@@ -94,7 +94,7 @@ struct TYPELIB;
 namespace histograms {
 
 // Same as MAX_NUMBER_OF_HISTOGRAM_BUCKETS defined in sql_yacc.yy
-static constexpr int MAX_NUMBER_OF_HISTOGRAM_BUCKETS = 1024;
+static constexpr int MAX_NUMBER_OF_HISTOGRAM_BUCKETS = 1024 << 5;
 
 /*
   This type represents a instrumented map of value maps, indexed by field
